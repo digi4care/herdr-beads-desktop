@@ -27,9 +27,9 @@ Tests use Node's built-in `node:test`; no external packages are required.
 |---|---|
 | ![BV Triage](screenshots/bv-triage.png) | ![Issue details popup](screenshots/detail-popup.png) |
 
-| Context menu | Ready filter + BV Triage banner |
-|---|---|
-| ![Context menu](screenshots/context-menu.png) | ![Ready filter](screenshots/panel-ready.png) |
+| Context menu |
+|---|
+| ![Context menu](screenshots/context-menu.png) |
 
 ## Installation
 
