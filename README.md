@@ -1,6 +1,6 @@
 # Herdr Beads Desktop
 
-A native Herdr Desktop mod for **beads_rust (`br`)** and **beads_viewer (`bv`)**.
+A native Herdr Desktop mod for **beads_rust (`br`)** and **beads_viewer (`bv`)**. It targets beads_rust (the Rust port), not the original Go `beads` (`bd`).
 
 The mod is read-only: active issues, a ready filter, a collapsible status filter with per-state counts, issue details rendered as markdown with a raw-source mode, direct dependencies, colored priority/type/status pills and state-colored borders, and `bv` Next/Triage for the focused workspace and tab. Right-clicking an issue opens its context menu (open details in popup, copy issue reference), and details can be opened in a popup or collapsed with an accordion toggle. A settings view controls font scale, button style, button content, detail rendering, and Mermaid.
 
