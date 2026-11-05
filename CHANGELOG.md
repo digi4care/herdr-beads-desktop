@@ -26,6 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Guard that closes an open popup before another one opens, so detail and board popups cannot nest.
 - Accordion toggle for the details box with mouse and keyboard support, persisted per project.
 - Per-project detail height ratio, migrated from the previous global ratio; tabs of one project share one value.
+- Toggle between compact list view and expanded card view (with description and labels), persisted per user in settings.
 - Full-color button variant whose hover and active shades are derived from the accent color, keeping the label readable at 4.5:1 or better.
 
 ### Fixed

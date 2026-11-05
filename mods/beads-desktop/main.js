@@ -1715,6 +1715,19 @@ export default class BeadsDesktop extends View {
         })
       )
       .child(
+        this.renderSegmented({
+          idPrefix: "setting-viewmode",
+          label: "Issue view",
+          value: (this.appSettings ?? DEFAULT_SETTINGS).viewMode,
+          options: [
+            { id: "setting-viewmode-list", key: "list", label: "List", value: "list" },
+            { id: "setting-viewmode-card", key: "card", label: "Cards", value: "card" }
+          ],
+          onSelect: (nextValue, cx) => this.updateSetting({ viewMode: nextValue }, cx),
+          t
+        })
+      )
+      .child(
         v_flex()
           .w_full()
           .min_w(0)
@@ -1844,6 +1857,7 @@ export default class BeadsDesktop extends View {
           .child(filterButton("filter-active", `Active (${this.issues.length})`, "active"))
           .child(filterButton("filter-ready", `Ready (${readyCount})`, "ready"))
           .child(this.renderStatusFilterDropdown(t))
+          .child(this.renderViewModeToggle(t))
       )
       .child(bvSection);
   }
@@ -2456,6 +2470,148 @@ export default class BeadsDesktop extends View {
       );
   }
 
+  renderViewModeToggle(t) {
+    const isCard = (this.appSettings ?? DEFAULT_SETTINGS).viewMode === "card";
+    const colors = controlColors(
+      { active: isCard, mutedWhenInactive: true, variant: this.appSettings.buttonVariant },
+      t
+    );
+    return div()
+      .id("beads-view-mode-toggle")
+      .px(8)
+      .py(3)
+      .rounded(5)
+      .border_1()
+      .border_color(colors.border)
+      .bg(colors.bg)
+      .text_size(this.fs(11))
+      .text_color(colors.text)
+      .cursor_pointer()
+      .hover((s) => s.bg(colors.hoverBg))
+      .on_click((_e, cx) => {
+        this.handle.focus();
+        const next = isCard ? "list" : "card";
+        this.updateSetting({ viewMode: next }, cx);
+      })
+      .child(isCard ? "Cards" : "List");
+  }
+
+  renderIssueCard(issue, t) {
+    const isSelected = this.selectedId === issue.id;
+    const isHighlighted = this.highlightedId === issue.id;
+    const isReady = this.readyIds.has(issue.id);
+    const allowDetailPopup = this.canOpenDetailPopup(this.currentContext);
+    const hasContextMenu = Boolean(
+      allowDetailPopup &&
+        issue.id &&
+        this.contextMenu?.issueId === issue.id &&
+        this.contextMenu?.popupId === `issue-context-popup-${issue.id}`
+    );
+    const colors = rowColors(
+      { selected: isSelected, highlighted: isHighlighted, status: issue?.status },
+      t
+    );
+    const pPill = priorityPillColors(issue.priority, t);
+    const tPill = typePillColors(issue.issueType, t);
+    const sPill = statusPillColors(issue.status, t);
+    const rPill = statusPillColors("ready", t);
+
+    const card = v_flex()
+      .id(`issue-card-${issue.id}`)
+      .w_full()
+      .min_w(0)
+      .flex_none()
+      .rounded(6)
+      .border_1()
+      .border_color(colors.border)
+      .bg(colors.bg)
+      .overflow_hidden()
+      .cursor_pointer()
+      .hover((s) => s.bg(colors.hoverBg))
+      .when(allowDetailPopup, (el) =>
+        el.on_mouse_down("right", (event, cx) => {
+          this.openIssueContextMenu(issue, event, cx, `issue-context-popup-${issue.id}`);
+        })
+      )
+      .on_click((_e, cx) => {
+        this.handle.focus();
+        this.selectIssue(issue.id, cx);
+      })
+      .p(10)
+      .gap(6)
+      .when(colors.hasStateBorder, (el) => el.border_l(3).border_color(colors.stateBorder))
+      .child(
+        h_flex()
+          .w_full()
+          .min_w(0)
+          .items_center()
+          .justify_between()
+          .gap(6)
+          .child(
+            h_flex()
+              .flex_1()
+              .min_w(0)
+              .items_center()
+              .gap(6)
+              .child(
+                div()
+                  .flex_none()
+                  .font_semibold()
+                  .text_size(this.fs(11))
+                  .text_color(colors.mutedText)
+                  .child(issue.id)
+              )
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(0)
+                  .truncate()
+                  .text_size(this.fs(12))
+                  .text_color(colors.text)
+                  .child(issue.title || "Untitled issue")
+              )
+          )
+          .child(
+            h_flex()
+              .flex_none()
+              .items_center()
+              .gap(4)
+              .child(this.renderPill(`P${issue.priority}`, pPill, true))
+              .child(this.renderPill(issue.issueType, tPill))
+              .child(this.renderPill(issue.status, sPill))
+              .when(isReady, (el) => el.child(this.renderPill("ready", rPill, true)))
+          )
+      )
+      .when(Boolean(issue.description), (el) =>
+        el.child(
+          div()
+            .w_full()
+            .min_w(0)
+            .text_size(this.fs(11))
+            .text_color(colors.mutedText)
+            .child(issue.description)
+        )
+      )
+      .when(Array.isArray(issue.labels) && issue.labels.length > 0, (el) =>
+        el.child(
+          h_flex()
+            .w_full()
+            .min_w(0)
+            .flex_wrap()
+            .gap(4)
+            .children(issue.labels.map((label) => this.renderPill(label, priorityPillColors(4, t))))
+        )
+      );
+
+    if (!allowDetailPopup) {
+      return card;
+    }
+
+    return Popup.new(`issue-context-popup-${issue.id}`, card)
+      .anchor("bottom_left")
+      .when(hasContextMenu, (el) => el.content(this.renderContextMenuForIssue(issue, t)));
+  }
+
   renderIssueRow(issue, t) {
     const isSelected = this.selectedId === issue.id;
     const isHighlighted = this.highlightedId === issue.id;
@@ -2591,7 +2747,13 @@ export default class BeadsDesktop extends View {
         )
       )
       .when(this.listState === "ready" && visible.length > 0, (el) =>
-        el.children(visible.map((issue) => this.renderIssueRow(issue, t)))
+        el.children(
+          visible.map((issue) =>
+            (this.appSettings ?? DEFAULT_SETTINGS).viewMode === "card"
+              ? this.renderIssueCard(issue, t)
+              : this.renderIssueRow(issue, t)
+          )
+        )
       )
       .when(this.hasMoreIssues, (el) =>
         el.child(

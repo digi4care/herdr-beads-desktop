@@ -19,7 +19,8 @@ test("settings module exposes shared key, frozen defaults and font scales", () =
     buttonVariant: "ghost",
     buttonContent: "text",
     detailsRender: "rendered",
-    mermaidRender: false
+    mermaidRender: false,
+    viewMode: "list"
   });
   assert.ok(Object.isFrozen(DEFAULT_SETTINGS));
   assert.deepEqual(FONT_SCALES, [0.9, 1, 1.15]);
@@ -48,7 +49,8 @@ test("normalizeSettings keeps valid values", () => {
       buttonVariant: "solid",
       buttonContent: "icon",
       detailsRender: "raw",
-      mermaidRender: false
+      mermaidRender: false,
+      viewMode: "list"
     }
   );
 });
@@ -108,11 +110,11 @@ test("serializeSettings produces normalized JSON with stable key order", () => {
   });
   assert.equal(
     serialized,
-    '{"fontScale":1.15,"buttonVariant":"solid","buttonContent":"icon","detailsRender":"raw","mermaidRender":false}'
+    '{"fontScale":1.15,"buttonVariant":"solid","buttonContent":"icon","detailsRender":"raw","mermaidRender":false,"viewMode":"list"}'
   );
   assert.equal(
     serializeSettings({ fontScale: "bad", buttonVariant: "bad" }),
-    '{"fontScale":1,"buttonVariant":"ghost","buttonContent":"text","detailsRender":"rendered","mermaidRender":false}'
+    '{"fontScale":1,"buttonVariant":"ghost","buttonContent":"text","detailsRender":"rendered","mermaidRender":false,"viewMode":"list"}'
   );
 });
 
@@ -122,7 +124,8 @@ test("settings roundtrip through parse and serialize", () => {
     buttonVariant: "solid",
     buttonContent: "icon",
     detailsRender: "raw",
-    mermaidRender: false
+    mermaidRender: false,
+    viewMode: "list"
   };
   assert.deepEqual(parseSettings(serializeSettings(settings)), settings);
 });
@@ -133,7 +136,8 @@ test("mergeSettings keeps untouched fields and skips null or undefined patch val
     buttonVariant: "solid",
     buttonContent: "icon",
     detailsRender: "raw",
-    mermaidRender: false
+    mermaidRender: false,
+    viewMode: "list"
   };
 
   assert.deepEqual(mergeSettings(current, { buttonVariant: "ghost" }), {

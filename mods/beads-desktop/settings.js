@@ -5,7 +5,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   buttonVariant: "ghost",
   buttonContent: "text",
   detailsRender: "rendered",
-  mermaidRender: false
+  mermaidRender: false,
+  viewMode: "list"
 });
 
 export const FONT_SCALES = Object.freeze([0.9, 1, 1.15]);
@@ -13,6 +14,7 @@ export const FONT_SCALES = Object.freeze([0.9, 1, 1.15]);
 const BUTTON_VARIANTS = ["ghost", "solid"];
 const BUTTON_CONTENTS = ["text", "icon"];
 const DETAILS_RENDER_MODES = ["rendered", "raw"];
+const VIEW_MODES = ["list", "card"];
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -59,7 +61,8 @@ export function normalizeSettings(raw) {
       DETAILS_RENDER_MODES,
       DEFAULT_SETTINGS.detailsRender
     ),
-    mermaidRender: pickBoolean(raw.mermaidRender, DEFAULT_SETTINGS.mermaidRender)
+    mermaidRender: pickBoolean(raw.mermaidRender, DEFAULT_SETTINGS.mermaidRender),
+    viewMode: pickEnum(raw.viewMode, VIEW_MODES, DEFAULT_SETTINGS.viewMode)
   };
 }
 
@@ -102,7 +105,8 @@ export function serializeSettings(settings) {
     buttonVariant: normalized.buttonVariant,
     buttonContent: normalized.buttonContent,
     detailsRender: normalized.detailsRender,
-    mermaidRender: normalized.mermaidRender
+    mermaidRender: normalized.mermaidRender,
+    viewMode: normalized.viewMode
   };
   return JSON.stringify(ordered);
 }
