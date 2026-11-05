@@ -19,17 +19,9 @@ Tests use Node's built-in `node:test`; no external packages are required.
 
 ## Screenshots
 
-| list-popup | settings |
-|---|---|
-| ![list-popup](screenshots/list-popup.png) | ![settings](screenshots/settings.png) |
+![Herdr Beads Desktop](preview.png)
 
-| bv-triage | detail-popup |
-|---|---|
-| ![bv-triage](screenshots/bv-triage.png) | ![detail-popup](screenshots/detail-popup.png) |
-
-| context-menu |
-|---|
-| ![context-menu](screenshots/context-menu.png) |
+Additional screenshots are available in the [`screenshots/`](screenshots/) directory.
 
 ## Installation
 
