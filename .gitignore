@@ -13,8 +13,6 @@ node_modules/
 # Local Beads tracker state: database, WAL, locks and history.
 /.beads/
 
-# Development recipe; not part of the published mod.
-/RECIPE.md
 
 # Local tool image captures (not for publication).
 /.opencode/
