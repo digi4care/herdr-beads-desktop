@@ -996,7 +996,7 @@ export default class BeadsDesktop extends View {
     });
   }
 
-  openIssueContextMenu(issue, event, cx) {
+  openIssueContextMenu(issue, event, cx, popupId = null) {
     if (!issue?.id) return;
     const context = getActiveContext(this.currentContext ?? null);
     if (!this.canOpenDetailPopup(context)) {
@@ -1005,32 +1005,23 @@ export default class BeadsDesktop extends View {
     this.handle.focus();
     this.statusFilterOpen = false;
     this.highlightedId = issue.id;
-    let anchor = "bottom_left";
+    // Keep the Popup anchored to its trigger element (the row/card) with a single
+    // bottom_left anchor; the Popup framework keeps it clear of the window edges.
+    // Nudge it horizontally toward the click, capped so it can never overflow the
+    // panel on the right.
     let offsetX = 0;
     const bounds = event && event.bounds;
-    const viewport =
-      typeof window !== "undefined" && typeof window.viewport_size === "function"
-        ? window.viewport_size()
-        : null;
-    const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 1280;
-    const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 800;
-    if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
-      const midY = bounds.y + (Number.isFinite(bounds.height) ? bounds.height / 2 : 0);
-      // The panel lives on the right side of the window, so the menu always opens
-      // leftwards (anchor *_right): opening rightwards would leave the screen.
-      // Vertical placement flips based on whether the clicked row is in the top or
-      // bottom half of the window, and the Popup itself clamps to the window edges.
-      const vertical = midY < viewportHeight / 2 ? "bottom" : "top";
-      anchor = `${vertical}_right`;
-      offsetX = 0;
+    if (bounds && Number.isFinite(bounds.width) && bounds.width > 0 && Number.isFinite(event.position?.x)) {
+      const localX = Math.round(event.position.x - bounds.x);
+      offsetX = Math.max(0, Math.min(Math.max(0, bounds.width - 196), localX));
     }
     this.contextMenu = {
       issueId: issue.id,
       issueTitle: issue.title || issue.id,
-      anchor,
+      popupId,
       offsetX
     };
-    this.contextMenuAnchor = anchor;
+    this.contextMenuAnchor = "bottom_left";
     this.contextMenuOffsetX = offsetX;
     event && cx.stop_propagation();
     cx.notify();
@@ -2211,7 +2202,12 @@ export default class BeadsDesktop extends View {
     const pPill = rec.priority !== null ? priorityPillColors(rec.priority, t) : null;
     const tPill = matchedIssue?.issueType ? typePillColors(matchedIssue.issueType, t) : null;
     const sPill = matchedIssue?.status ? statusPillColors(matchedIssue.status, t) : null;
-    const hasContextMenu = Boolean(allowDetailPopup && rec.id && this.contextMenu?.issueId === rec.id);
+    const hasContextMenu = Boolean(
+      allowDetailPopup &&
+        rec.id &&
+        this.contextMenu?.issueId === rec.id &&
+        this.contextMenu?.popupId === `${keyPrefix}-popup-${rec.id}`
+    );
 
     const card = v_flex()
       .id(`${keyPrefix}-${rec.id || "item"}`)
@@ -2225,7 +2221,7 @@ export default class BeadsDesktop extends View {
       .when(canSelect, (el) => el.cursor_pointer().hover((s) => s.bg(cardColors.hoverBg)))
       .when(allowDetailPopup, (el) =>
         el.on_mouse_down("right", (event, cx) => {
-          this.openIssueContextMenu({ id: rec.id, title: rec.title }, event, cx);
+          this.openIssueContextMenu({ id: rec.id, title: rec.title }, event, cx, `${keyPrefix}-popup-${rec.id}`);
         })
       )
       .on_click((_e, cx) => {
@@ -2313,7 +2309,7 @@ export default class BeadsDesktop extends View {
     }
 
     return Popup.new(`${keyPrefix}-popup-${rec.id || "item"}`, card)
-      .anchor(this.contextMenu?.anchor || "bottom_left")
+      .anchor("bottom_left")
       .when(hasContextMenu, (el) =>
         el.content(this.renderContextMenuForIssue({ id: rec.id, title: rec.title }, t))
       );
@@ -2428,7 +2424,12 @@ export default class BeadsDesktop extends View {
     const isHighlighted = this.highlightedId === issue.id;
     const isReady = this.readyIds.has(issue.id);
     const allowDetailPopup = this.canOpenDetailPopup(this.currentContext);
-    const hasContextMenu = Boolean(allowDetailPopup && this.contextMenu?.issueId === issue.id);
+    const hasContextMenu = Boolean(
+      allowDetailPopup &&
+        issue.id &&
+        this.contextMenu?.issueId === issue.id &&
+        this.contextMenu?.popupId === `issue-context-popup-${issue.id}`
+    );
     const colors = rowColors(
       { selected: isSelected, highlighted: isHighlighted, status: issue?.status },
       t
@@ -2452,7 +2453,7 @@ export default class BeadsDesktop extends View {
       .hover((s) => s.bg(colors.hoverBg))
       .when(allowDetailPopup, (el) =>
         el.on_mouse_down("right", (event, cx) => {
-          this.openIssueContextMenu(issue, event, cx);
+          this.openIssueContextMenu(issue, event, cx, `issue-context-popup-${issue.id}`);
         })
       )
       .on_click((_e, cx) => {
@@ -2513,7 +2514,7 @@ export default class BeadsDesktop extends View {
     }
 
     return Popup.new(`issue-context-popup-${issue.id}`, row)
-      .anchor(this.contextMenu?.anchor || "bottom_left")
+      .anchor("bottom_left")
       .when(hasContextMenu, (el) => el.content(this.renderContextMenuForIssue(issue, t)));
   }
 
