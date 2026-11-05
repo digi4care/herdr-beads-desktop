@@ -72,7 +72,7 @@ The mod makes no network calls other than Mermaid rendering. **Mermaid is off by
 
 ## Versioning and publication
 
-This project follows [Semantic Versioning](https://semver.org/). The current development version is `0.1.0`; releases and verification evidence are recorded in [CHANGELOG.md](CHANGELOG.md).
+This project follows [Semantic Versioning](https://semver.org/). The current development version is `0.1.0`; releases and verification evidence are recorded in [CHANGELOG.md](CHANGELOG.md). The project is licensed under the [MIT License](LICENSE).
 
 All public documentation, code comments, test names, error messages, and user-facing copy use English. Local development documents under `docs/` are intentionally excluded from Git publication.
 

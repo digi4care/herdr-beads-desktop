@@ -36,7 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Pending
 
 - Interactive validation of mouse issue selection and BV buttons.
-- Final publishing metadata, including repository URL and license.
+- Long-term stability and soak testing.
 
 ## Release policy
 
