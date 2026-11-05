@@ -19,17 +19,17 @@ Tests use Node's built-in `node:test`; no external packages are required.
 
 ## Screenshots
 
-| Issue list | Settings view |
+| list-popup | settings |
 |---|---|
-| ![Issue list](screenshots/list-popup.png) | ![Settings view](screenshots/settings.png) |
+| ![list-popup](screenshots/list-popup.png) | ![settings](screenshots/settings.png) |
 
-| BV Triage recommendation card | Issue details popup |
+| bv-triage | detail-popup |
 |---|---|
-| ![BV Triage](screenshots/bv-triage.png) | ![Issue details popup](screenshots/detail-popup.png) |
+| ![bv-triage](screenshots/bv-triage.png) | ![detail-popup](screenshots/detail-popup.png) |
 
-| Context menu |
+| context-menu |
 |---|
-| ![Context menu](screenshots/context-menu.png) |
+| ![context-menu](screenshots/context-menu.png) |
 
 ## Installation
 
