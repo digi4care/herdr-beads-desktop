@@ -9,6 +9,8 @@ import {
   typePillColors,
   statusColor,
   statusPillColors,
+  isKnownStatus,
+  statusBorderColor,
   rowColors,
   controlColors,
   errorColors,
@@ -235,6 +237,82 @@ test("rowColors distinguishes default, highlighted, and selected rows using them
     assert.notEqual(idleRow.bg, highlightedRow.bg);
     assert.notEqual(highlightedRow.bg, selectedRow.bg);
     assert.notEqual(idleRow.border, selectedRow.border);
+  }
+});
+
+test("rowColors and statusBorderColor resolve stateBorder from statusColor for known statuses and fall back for unknown/missing", () => {
+  assert.equal(isKnownStatus("open"), true);
+  assert.equal(isKnownStatus("in_progress"), true);
+  assert.equal(isKnownStatus("In-Progress"), true);
+  assert.equal(isKnownStatus("blocked"), true);
+  assert.equal(isKnownStatus("closed"), true);
+  assert.equal(isKnownStatus("done"), true);
+  assert.equal(isKnownStatus("deferred"), true);
+  assert.equal(isKnownStatus("ready"), true);
+  assert.equal(isKnownStatus("custom_state"), true);
+
+  assert.equal(isKnownStatus("unknown"), false);
+  assert.equal(isKnownStatus("  UNKNOWN  "), false);
+  assert.equal(isKnownStatus(""), false);
+  assert.equal(isKnownStatus("   "), false);
+  assert.equal(isKnownStatus(null), false);
+  assert.equal(isKnownStatus(undefined), false);
+  assert.equal(isKnownStatus(42), false);
+
+  for (const theme of [DARK_THEME, LIGHT_THEME]) {
+    for (const status of ["open", "in_progress", "working", "blocked", "closed", "done", "ready", "deferred", "custom"]) {
+      const borderColor = statusBorderColor(status, theme);
+      const expected = statusColor(status, theme);
+      assert.equal(borderColor, expected);
+      assertFromTheme(borderColor, theme);
+
+      const idle = rowColors({ selected: false, highlighted: false, status }, theme);
+      const highlighted = rowColors({ selected: false, highlighted: true, status }, theme);
+      const selected = rowColors({ selected: true, highlighted: true, status }, theme);
+
+      assert.equal(idle.hasStateBorder, true);
+      assert.equal(idle.stateBorder, expected);
+      assert.equal(idle.border, theme.border);
+      assert.equal(idle.bg, theme.surface);
+      assert.equal(idle.hoverBg, theme.hover);
+      assert.equal(idle.text, theme.foreground);
+      assert.equal(idle.mutedText, theme.muted);
+      assert.equal(idle.dimText, theme.dim);
+
+      assert.equal(highlighted.hasStateBorder, true);
+      assert.equal(highlighted.stateBorder, expected);
+      assert.equal(highlighted.border, theme.input);
+      assert.equal(highlighted.bg, theme.raised);
+      assert.equal(highlighted.hoverBg, theme.hover);
+      assert.equal(highlighted.text, theme.foreground);
+
+      assert.equal(selected.hasStateBorder, true);
+      assert.equal(selected.stateBorder, expected);
+      assert.equal(selected.border, theme.accent);
+      assert.equal(selected.bg, theme.selected);
+      assert.equal(selected.hoverBg, theme.selected);
+      assert.equal(selected.text, theme.foreground);
+    }
+
+    for (const missing of [null, undefined, "", "   ", "unknown", "UNKNOWN", 99, {}]) {
+      assert.equal(statusBorderColor(missing, theme), theme.border);
+
+      const idle = rowColors({ selected: false, highlighted: false, status: missing }, theme);
+      const highlighted = rowColors({ selected: false, highlighted: true, status: missing }, theme);
+      const selected = rowColors({ selected: true, highlighted: false, status: missing }, theme);
+
+      assert.equal(idle.hasStateBorder, false);
+      assert.equal(idle.stateBorder, theme.border);
+      assert.equal(idle.border, theme.border);
+
+      assert.equal(highlighted.hasStateBorder, false);
+      assert.equal(highlighted.stateBorder, theme.input);
+      assert.equal(highlighted.border, theme.input);
+
+      assert.equal(selected.hasStateBorder, false);
+      assert.equal(selected.stateBorder, theme.accent);
+      assert.equal(selected.border, theme.accent);
+    }
   }
 });
 

@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { countIssuesByStatus, filterIssues, normalizeStatusKey, parseBrDependencies, parseBrList, parseBrReady, parseBrShow, parseBvNext, parseBvTriage, SUPPORTED_STATUSES } from "../mods/beads-desktop/data.js";
+import {
+  countIssuesByStatus,
+  defaultActiveStatuses,
+  filterIssues,
+  filterIssuesByStatus,
+  formatStatusFilterSummary,
+  isDefaultActiveStatusSelection,
+  normalizeStatusKey,
+  parseBrDependencies,
+  parseBrList,
+  parseBrReady,
+  parseBrShow,
+  parseBvNext,
+  parseBvTriage,
+  presentStatusEntries,
+  resolveSelectedStatuses,
+  SUPPORTED_STATUSES,
+  toggleStatusFilter
+} from "../mods/beads-desktop/data.js";
 
 test("parseBrList normalizes the br 0.7.6 list shape and preserves pagination", () => {
   const result = parseBrList({
@@ -265,4 +283,107 @@ test("countIssuesByStatus counts the full issue list and not the filtered subset
   assert.equal(filtered.counts.open, 1);
   assert.equal(filtered.counts.closed, 0);
   assert.equal(all.counts.open, 2);
+});
+
+test("presentStatusEntries returns only statuses present in the loaded project in ordered sequence", () => {
+  const issues = [
+    { id: "1", status: "closed" },
+    { id: "2", status: "open" },
+    { id: "3", status: "open" },
+    { id: "4", status: "custom_review" },
+    { id: "5", status: "in-progress" }
+  ];
+
+  const present = presentStatusEntries(issues);
+  assert.deepEqual(present, [
+    { status: "open", count: 2, supported: true },
+    { status: "in_progress", count: 1, supported: true },
+    { status: "closed", count: 1, supported: true },
+    { status: "custom_review", count: 1, supported: false }
+  ]);
+  assert.deepEqual(presentStatusEntries([]), []);
+});
+
+test("defaultActiveStatuses and resolveSelectedStatuses default to all non-closed statuses", () => {
+  const issues = [
+    { id: "1", status: "open" },
+    { id: "2", status: "in_progress" },
+    { id: "3", status: "blocked" },
+    { id: "4", status: "closed" },
+    { id: "5", status: "done" },
+    { id: "6", status: "custom" }
+  ];
+
+  const defaults = defaultActiveStatuses(issues);
+  assert.deepEqual([...defaults], ["open", "in_progress", "blocked", "custom"]);
+  assert.deepEqual([...resolveSelectedStatuses(issues, null)], ["open", "in_progress", "blocked", "custom"]);
+  assert.equal(isDefaultActiveStatusSelection(issues, null), true);
+  assert.equal(isDefaultActiveStatusSelection(issues, ["open", "in_progress", "blocked", "custom"]), true);
+  assert.equal(isDefaultActiveStatusSelection(issues, ["open", "closed"]), false);
+});
+
+test("toggleStatusFilter toggles statuses in multi-select and preserves normalized state without mutating input", () => {
+  const issues = [
+    { id: "1", status: "open" },
+    { id: "2", status: "blocked" },
+    { id: "3", status: "closed" }
+  ];
+  const snapshot = structuredClone(issues);
+
+  // Starting from null (default Active: open + blocked), toggling closed adds closed
+  const withClosed = toggleStatusFilter(issues, null, "closed");
+  assert.deepEqual([...withClosed].sort(), ["blocked", "closed", "open"]);
+  assert.equal(formatStatusFilterSummary(issues, withClosed), "All");
+
+  // Toggling open removes open
+  const withoutOpen = toggleStatusFilter(issues, withClosed, "open");
+  assert.deepEqual([...withoutOpen].sort(), ["blocked", "closed"]);
+  assert.equal(formatStatusFilterSummary(issues, withoutOpen), "2 states");
+
+  // Toggling closed removes closed, leaving only blocked
+  const onlyBlocked = toggleStatusFilter(issues, withoutOpen, "closed");
+  assert.deepEqual([...onlyBlocked], ["blocked"]);
+  assert.equal(formatStatusFilterSummary(issues, onlyBlocked), "blocked");
+
+  // Toggling blocked removes blocked, leaving None
+  const noneSelected = toggleStatusFilter(issues, onlyBlocked, "blocked");
+  assert.deepEqual([...noneSelected], []);
+  assert.equal(formatStatusFilterSummary(issues, noneSelected), "None");
+
+  assert.deepEqual(issues, snapshot);
+});
+
+test("filterIssuesByStatus and filterIssues compose ready and multi-select status filtering", () => {
+  const issues = [
+    { id: "a", status: "open" },
+    { id: "b", status: "in_progress" },
+    { id: "c", status: "blocked" },
+    { id: "d", status: "closed" }
+  ];
+  const readyIds = new Set(["a", "b", "d"]);
+
+  // Default Active (selectedStatuses = null) excludes closed
+  assert.deepEqual(
+    filterIssuesByStatus(issues, null).map((i) => i.id),
+    ["a", "b", "c"]
+  );
+  assert.deepEqual(
+    filterIssues(issues, readyIds, "active", null).map((i) => i.id),
+    ["a", "b", "c"]
+  );
+  assert.deepEqual(
+    filterIssues(issues, readyIds, "ready", null).map((i) => i.id),
+    ["a", "b"]
+  );
+
+  // Multi-select with closed + open
+  const openAndClosed = new Set(["open", "closed"]);
+  assert.deepEqual(
+    filterIssues(issues, readyIds, "active", openAndClosed).map((i) => i.id),
+    ["a", "d"]
+  );
+  assert.deepEqual(
+    filterIssues(issues, readyIds, "ready", openAndClosed).map((i) => i.id),
+    ["a", "d"]
+  );
 });

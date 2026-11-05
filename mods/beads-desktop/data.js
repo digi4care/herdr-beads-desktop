@@ -78,8 +78,13 @@ export function parseBrShow(payload) {
   return normalizeIssue(payload[0]);
 }
 
-export function filterIssues(issues, readyIds, filter) {
-  return filter === "ready" ? issues.filter((issue) => readyIds.has(issue.id)) : issues;
+export function filterIssues(issues, readyIds, filter, selectedStatuses) {
+  const list = Array.isArray(issues) ? issues : [];
+  const byReady = filter === "ready" ? list.filter((issue) => readyIds?.has?.(issue.id)) : list;
+  if (selectedStatuses === undefined) {
+    return byReady;
+  }
+  return filterIssuesByStatus(byReady, selectedStatuses);
 }
 
 export function parseBrReady(payload) {
@@ -145,6 +150,91 @@ export function countIssuesByStatus(issues) {
   }
 
   return { total: list.length, counts, ordered };
+}
+
+export function presentStatusEntries(issues) {
+  return countIssuesByStatus(issues).ordered.filter((entry) => entry.count > 0);
+}
+
+export function defaultActiveStatuses(issues) {
+  return new Set(
+    presentStatusEntries(issues)
+      .map((entry) => entry.status)
+      .filter((status) => status !== "closed")
+  );
+}
+
+export function resolveSelectedStatuses(issues, selectedStatuses = null) {
+  if (selectedStatuses === null || selectedStatuses === undefined) {
+    return defaultActiveStatuses(issues);
+  }
+  if (selectedStatuses instanceof Set || Array.isArray(selectedStatuses)) {
+    const resolved = new Set();
+    for (const status of selectedStatuses) {
+      if (typeof status === "string" && status.trim().length > 0) {
+        resolved.add(normalizeStatusKey(status));
+      }
+    }
+    return resolved;
+  }
+  return defaultActiveStatuses(issues);
+}
+
+export function isDefaultActiveStatusSelection(issues, selectedStatuses = null) {
+  if (selectedStatuses === null || selectedStatuses === undefined) {
+    return true;
+  }
+  const present = presentStatusEntries(issues);
+  const resolved = resolveSelectedStatuses(issues, selectedStatuses);
+  const activeDefaults = defaultActiveStatuses(issues);
+  const selectedPresent = present
+    .map((entry) => entry.status)
+    .filter((status) => resolved.has(status));
+
+  if (selectedPresent.length !== activeDefaults.size) {
+    return false;
+  }
+  return selectedPresent.every((status) => activeDefaults.has(status));
+}
+
+export function toggleStatusFilter(issues, selectedStatuses, statusToToggle) {
+  const key = normalizeStatusKey(statusToToggle);
+  const next = new Set(resolveSelectedStatuses(issues, selectedStatuses));
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  return next;
+}
+
+export function filterIssuesByStatus(issues, selectedStatuses = null) {
+  const list = Array.isArray(issues) ? issues : [];
+  if (selectedStatuses === null || selectedStatuses === undefined) {
+    return list.filter((issue) => normalizeStatusKey(issue?.status) !== "closed");
+  }
+  const allowed = resolveSelectedStatuses(list, selectedStatuses);
+  return list.filter((issue) => allowed.has(normalizeStatusKey(issue?.status)));
+}
+
+export function formatStatusFilterSummary(issues, selectedStatuses = null) {
+  if (isDefaultActiveStatusSelection(issues, selectedStatuses)) {
+    return "Active";
+  }
+  const present = presentStatusEntries(issues);
+  const resolved = resolveSelectedStatuses(issues, selectedStatuses);
+  const selectedPresent = present.filter((entry) => resolved.has(entry.status));
+
+  if (present.length > 0 && selectedPresent.length === present.length) {
+    return "All";
+  }
+  if (selectedPresent.length === 0) {
+    return "None";
+  }
+  if (selectedPresent.length === 1) {
+    return selectedPresent[0].status;
+  }
+  return `${selectedPresent.length} states`;
 }
 
 export function parseBrList(payload) {

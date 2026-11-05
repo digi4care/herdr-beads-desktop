@@ -361,18 +361,54 @@ export function statusPillColors(status, rawTheme = {}) {
 }
 
 /**
- * Resolve interactive row/card colors for idle, keyboard-highlighted, and selected states.
+ * Determine whether an issue status string represents a known status rather than
+ * a missing or `"unknown"` placeholder.
  *
- * @param {{selected?: boolean, highlighted?: boolean}} [state]
+ * @param {unknown} status
+ * @returns {boolean}
+ */
+export function isKnownStatus(status) {
+  if (typeof status !== "string") return false;
+  const cleaned = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return cleaned.length > 0 && cleaned !== "unknown";
+}
+
+/**
+ * Resolve the border/accent color for an issue status, falling back to the
+ * neutral theme border token when the status is missing or `"unknown"`.
+ *
+ * @param {unknown} status
  * @param {Record<string, string>|{colors?: Record<string, string>}} [rawTheme]
  */
-export function rowColors({ selected = false, highlighted = false } = {}, rawTheme = {}) {
+export function statusBorderColor(status, rawTheme = {}) {
   const tokens = resolveThemeTokens(rawTheme);
+  if (!isKnownStatus(status)) {
+    return tokens.border;
+  }
+  return statusColor(status, rawTheme);
+}
+
+/**
+ * Resolve interactive row/card colors for idle, keyboard-highlighted, and selected states,
+ * including the issue-state left accent border (`stateBorder`) when `status` is known.
+ *
+ * @param {{selected?: boolean, highlighted?: boolean, status?: unknown}} [state]
+ * @param {Record<string, string>|{colors?: Record<string, string>}} [rawTheme]
+ */
+export function rowColors(
+  { selected = false, highlighted = false, status = null } = {},
+  rawTheme = {}
+) {
+  const tokens = resolveThemeTokens(rawTheme);
+  const hasStateBorder = isKnownStatus(status);
+  const resolvedStateColor = hasStateBorder ? statusColor( /** @type {string} */ (status), rawTheme) : null;
 
   if (selected) {
     return {
       bg: tokens.selected,
       border: tokens.accent,
+      stateBorder: resolvedStateColor ?? tokens.accent,
+      hasStateBorder,
       hoverBg: tokens.selected,
       text: tokens.foreground,
       mutedText: tokens.muted,
@@ -384,6 +420,8 @@ export function rowColors({ selected = false, highlighted = false } = {}, rawThe
     return {
       bg: tokens.raised,
       border: tokens.input,
+      stateBorder: resolvedStateColor ?? tokens.input,
+      hasStateBorder,
       hoverBg: tokens.hover,
       text: tokens.foreground,
       mutedText: tokens.muted,
@@ -394,6 +432,8 @@ export function rowColors({ selected = false, highlighted = false } = {}, rawThe
   return {
     bg: tokens.surface,
     border: tokens.border,
+    stateBorder: resolvedStateColor ?? tokens.border,
+    hasStateBorder,
     hoverBg: tokens.hover,
     text: tokens.foreground,
     mutedText: tokens.muted,
