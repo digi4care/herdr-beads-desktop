@@ -1,12 +1,43 @@
 {
   "name": "herdr-beads-desktop",
   "version": "0.1.0",
+  "description": "Native read-only Herdr Desktop mod for beads_rust (br) and beads_viewer (bv): issue browser, BV Next/Triage recommendations, markdown and Mermaid details, settings, and per-project layout state.",
   "private": true,
+  "license": "MIT",
   "author": {
     "name": "Chris Engelhard",
-    "email": "chris@chrisengelhard.nl"
+    "email": "chris@chrisengelhard.nl",
+    "url": "https://github.com/digi4care"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/digi4care/herdr-beads-desktop.git"
+  },
+  "homepage": "https://github.com/digi4care/herdr-beads-desktop#readme",
+  "bugs": {
+    "url": "https://github.com/digi4care/herdr-beads-desktop/issues"
+  },
+  "keywords": [
+    "herdr",
+    "herdr-mod",
+    "beads",
+    "beads-rust",
+    "beads-viewer",
+    "mod",
+    "desktop",
+    "read-only"
+  ],
   "type": "module",
+  "main": "mods/beads-desktop/main.js",
+  "files": [
+    "mods/",
+    "tests/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "RECIPE.md",
+    "preview.png"
+  ],
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage tests/*.test.js",
