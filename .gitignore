@@ -1,0 +1,14 @@
+# Local product and technical development documentation; never publish.
+/docs/
+
+# Generated Herdr editor types and runtime errors.
+**/gpui-kit.d.ts
+*.error
+
+# Local dependencies, logs and OS files.
+node_modules/
+*.log
+.DS_Store
+
+# Local Beads tracker state: database, WAL, locks and history.
+/.beads/

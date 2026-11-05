@@ -1,0 +1,17 @@
+{
+  "name": "herdr-beads-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "author": {
+    "name": "Chris Engelhard",
+    "email": "chris@chrisengelhard.nl"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check:mod": "herdr-app check mods/beads-desktop"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
