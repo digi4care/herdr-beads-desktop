@@ -18,9 +18,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Real app validation of workspace and tab switching.
 - Settings view (gear button) for font scale, button style, button content, detail rendering, and Mermaid, persisted per Herdr user under `beads-desktop:settings`.
 - Colored priority, type, and status pills on issue rows; pills are display-only and never filter the list.
+- Status filter dropdown with multi-select over the statuses present in the project, defaulting to Active, plus a compact per-state count summary in the header; both are display-only and do not change tracker data.
+- Issue borders and BV card accents colored by issue state, using the same tokens as pills.
 - Markdown rendering for issue details with a raw-source mode, plus `mermaid` fence rendering through mermaid.ink behind an explicit, default-off setting with a local SVG cache.
-- Issue context menu on right-click, including opening details in a popup.
+- Issue context menu on right-click, including "Open details in popup" and "Copy issue reference" (single-line, control-character-safe clipboard copy, no auto-submit).
+- Context menu popup anchored at the click with smart top/bottom/left/right placement.
 - Guard that closes an open popup before another one opens, so detail and board popups cannot nest.
+- Accordion toggle for the details box with mouse and keyboard support, persisted per project.
+- Per-project detail height ratio, migrated from the previous global ratio; tabs of one project share one value.
 - Full-color button variant whose hover and active shades are derived from the accent color, keeping the label readable at 4.5:1 or better.
 
 ### Fixed
