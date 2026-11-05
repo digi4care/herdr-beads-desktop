@@ -18,7 +18,15 @@ import {
   theme,
   writeTextFile
 } from "herdr";
-import { filterIssues } from "./data.js";
+import {
+  countIssuesByStatus,
+   filterIssues,
+  formatStatusFilterSummary,
+  isDefaultActiveStatusSelection,
+  presentStatusEntries,
+  resolveSelectedStatuses,
+  toggleStatusFilter
+} from "./data.js";
 import { buildExecOptions, createCliRunner } from "./cli.js";
 import { resolveProjectContext, resolveVisibilityAction } from "./context.js";
 import {
@@ -372,6 +380,8 @@ export default class BeadsDesktop extends View {
     this.bvGen = 0;
 
     this.filter = this.initialPopupFilter ?? "active";
+    this.selectedStatuses = null;
+    this.statusFilterOpen = false;
     this.listState = "idle";
     this.listError = null;
     this.issues = [];
@@ -505,6 +515,7 @@ export default class BeadsDesktop extends View {
   async close() {
     this.closed = true;
     this.contextMenu = null;
+    this.statusFilterOpen = false;
     this.dividerDragging = false;
     this.dividerDragStart = null;
     this.visibilityTimer?.cancel();
@@ -575,6 +586,8 @@ export default class BeadsDesktop extends View {
     this.readyIds = new Set();
     this.totalIssues = 0;
     this.hasMoreIssues = false;
+    this.selectedStatuses = null;
+    this.statusFilterOpen = false;
 
     this.clearSelectionState();
     this.bvAvailable = false;
@@ -686,12 +699,10 @@ export default class BeadsDesktop extends View {
   }
 
   visibleIssues() {
-    return filterIssues(this.issues, this.readyIds, this.filter);
+    return filterIssues(this.issues, this.readyIds, this.filter, this.selectedStatuses);
   }
 
-  setFilter(nextFilter, cx) {
-    if (this.filter === nextFilter) return;
-    this.filter = nextFilter;
+  applyFilterSelectionChange(cx) {
     this.contextMenu = null;
     const visible = this.visibleIssues();
     const decision = resolveSelection({
@@ -730,6 +741,31 @@ export default class BeadsDesktop extends View {
       });
     }
     cx.notify();
+  }
+
+  setFilter(nextFilter, cx) {
+    if (this.filter === nextFilter) return;
+    this.filter = nextFilter;
+    this.statusFilterOpen = false;
+    this.applyFilterSelectionChange(cx);
+  }
+
+  toggleStatusFilterOption(status, cx) {
+    this.selectedStatuses = toggleStatusFilter(this.issues, this.selectedStatuses, status);
+    this.applyFilterSelectionChange(cx);
+  }
+
+  resetStatusFilter(cx) {
+    this.selectedStatuses = null;
+    this.applyFilterSelectionChange(cx);
+  }
+
+  closeStatusFilterDropdown(cx = null) {
+    if (!this.statusFilterOpen) return;
+    this.statusFilterOpen = false;
+    if (cx) {
+      cx.notify();
+    }
   }
 
   refreshIssues(cx, explicitContext = null, notify = true) {
@@ -838,6 +874,7 @@ export default class BeadsDesktop extends View {
     const context = getActiveContext(this.currentContext ?? null);
     if (!context.supported || !context.cwd) return;
     this.contextMenu = null;
+    this.statusFilterOpen = false;
     this.highlightedId = issueId;
     writeSharedContext(context);
     writeSharedSelection({
@@ -905,6 +942,7 @@ export default class BeadsDesktop extends View {
       return;
     }
     this.handle.focus();
+    this.statusFilterOpen = false;
     this.highlightedId = issue.id;
     this.contextMenu = {
       issueId: issue.id,
@@ -1100,6 +1138,11 @@ export default class BeadsDesktop extends View {
         this.closeContextMenu(cx);
         return;
       }
+      if (this.statusFilterOpen) {
+        cx.stop_propagation();
+        this.closeStatusFilterDropdown(cx);
+        return;
+      }
       if (this.showSettings) {
         this.showSettings = false;
         cx.stop_propagation();
@@ -1270,6 +1313,7 @@ export default class BeadsDesktop extends View {
                   onActivate: (_e, cx) => {
                     this.handle.focus();
                     this.contextMenu = null;
+                    this.statusFilterOpen = false;
                     this.showSettings = !this.showSettings;
                     cx.notify();
                   }
@@ -1339,6 +1383,72 @@ export default class BeadsDesktop extends View {
               .text_color(t.muted)
               .child(context.cwd ? `${context.spaceName} (${context.cwd})` : context.spaceName)
           )
+      )
+      .when(!isDetailPopup, (header) => header.child(this.renderStatusCounts(context, t)));
+  }
+
+  renderStatusCounts(context, t) {
+    const canShowCounts =
+      Boolean(context?.supported) &&
+      (this.listState === "ready" || this.listState === "empty");
+
+    if (!canShowCounts) {
+      return h_flex()
+        .id("beads-status-counts")
+        .w_full()
+        .min_w(0)
+        .items_center()
+        .gap(4)
+        .child(div().text_size(this.fs(10)).text_color(t.dim).child("States:"))
+        .child(div().text_size(this.fs(10)).text_color(t.dim).child("—"));
+    }
+
+    const summary = countIssuesByStatus(this.issues);
+    const entries = summary.ordered.filter(
+      (entry) => entry.supported || entry.count > 0
+    );
+    const hideLabels = (this.panelWidth || 380) < 320;
+
+    return h_flex()
+      .id("beads-status-counts")
+      .w_full()
+      .min_w(0)
+      .flex_wrap()
+      .items_center()
+      .gap_x(8)
+      .gap_y(3)
+      .children(
+        entries.map((entry) => {
+          const color = statusColor(entry.status, t);
+          return h_flex()
+            .id(`status-count-${entry.status}`)
+            .flex_none()
+            .items_center()
+            .gap(3)
+            .child(
+              div()
+                .w(5)
+                .h(5)
+                .rounded(999)
+                .bg(color)
+            )
+            .when(!hideLabels, (el) =>
+              el.child(
+                div()
+                  .text_size(this.fs(10))
+                  .text_color(t.muted)
+                  .child(entry.status)
+              )
+            )
+            .child(
+              div()
+                .id(`status-count-value-${entry.status}`)
+                .font_semibold()
+                .text_size(this.fs(10))
+                .text_color(color)
+                .child(String(entry.count))
+            );
+        })
       );
   }
 
@@ -1629,6 +1739,9 @@ export default class BeadsDesktop extends View {
 
     return h_flex()
       .flex_none()
+      .w_full()
+      .min_w(0)
+      .flex_wrap()
       .px(12)
       .py(8)
       .gap(6)
@@ -1638,12 +1751,208 @@ export default class BeadsDesktop extends View {
       .border_color(divider.color)
       .child(
         h_flex()
+          .min_w(0)
+          .flex_wrap()
           .items_center()
           .gap(4)
           .child(filterButton("filter-active", `Active (${this.issues.length})`, "active"))
           .child(filterButton("filter-ready", `Ready (${readyCount})`, "ready"))
+          .child(this.renderStatusFilterDropdown(t))
       )
       .child(bvSection);
+  }
+
+  renderStatusFilterDropdown(t) {
+    const present = presentStatusEntries(this.issues);
+    const resolvedSelected = resolveSelectedStatuses(this.issues, this.selectedStatuses);
+    const isDefaultActive = isDefaultActiveStatusSelection(this.issues, this.selectedStatuses);
+    const summaryLabel = formatStatusFilterSummary(this.issues, this.selectedStatuses);
+    const expandedLabel = this.statusFilterOpen ? "expanded" : "collapsed";
+    const triggerColors = controlColors(
+      {
+        active: this.statusFilterOpen || !isDefaultActive,
+        mutedWhenInactive: true,
+        variant: this.appSettings.buttonVariant
+      },
+      t
+    );
+
+    const trigger = h_flex()
+      .id("beads-status-filter-trigger")
+      .role("button")
+      .accessibility_label(`Status filter (${summaryLabel}), ${expandedLabel}`)
+      .px(8)
+      .py(3)
+      .gap(4)
+      .items_center()
+      .rounded(5)
+      .border_1()
+      .border_color(triggerColors.border)
+      .bg(triggerColors.bg)
+      .text_size(this.fs(11))
+      .text_color(triggerColors.text)
+      .cursor_pointer()
+      .hover((s) => s.bg(triggerColors.hoverBg))
+      .on_click((_e, cx) => {
+        this.handle.focus();
+        this.contextMenu = null;
+        this.statusFilterOpen = !this.statusFilterOpen;
+        cx.notify();
+      })
+      .child(`Status: ${summaryLabel}`)
+      .child(this.renderButtonGlyph("chevron-down", triggerColors, 11));
+
+    return Popup.new("beads-status-filter-popup", trigger)
+      .anchor("bottom_left")
+      .when(this.statusFilterOpen, (el) =>
+        el.content(this.renderStatusFilterMenu(present, resolvedSelected, isDefaultActive, t))
+      );
+  }
+
+  renderStatusFilterMenu(present, resolvedSelected, isDefaultActive, t) {
+    const menuWidth = Math.min(200, Math.max(152, (this.panelWidth || 380) - 24));
+    const resetColors = controlColors(
+      {
+        mutedWhenInactive: true,
+        variant: this.appSettings.buttonVariant
+      },
+      t
+    );
+
+    return v_flex()
+      .id("beads-status-filter-menu")
+      .role("list_box")
+      .accessibility_label("Status filter options")
+      .w(menuWidth)
+      .p(6)
+      .gap(3)
+      .rounded(6)
+      .border_1()
+      .border_color(t.accent)
+      .bg(t.popover)
+      .on_mouse_down("left", (_e, cx) => {
+        cx.stop_propagation();
+      })
+      .on_mouse_down("right", (_e, cx) => {
+        cx.stop_propagation();
+      })
+      .on_mouse_down_out((_e, outCx) => {
+        this.closeStatusFilterDropdown(outCx);
+      })
+      .when(present.length === 0, (menu) =>
+        menu.child(
+          div()
+            .px(6)
+            .py(4)
+            .text_size(this.fs(10))
+            .text_color(t.dim)
+            .child("No statuses in project")
+        )
+      )
+      .children(
+        present.map((entry) => {
+          const checked = resolvedSelected.has(entry.status);
+          const sColor = statusColor(entry.status, t);
+
+          return h_flex()
+            .id(`beads-status-filter-option-${entry.status}`)
+            .role("list_box_option")
+            .aria_selected(checked)
+            .accessibility_label(
+              `${entry.status}, ${entry.count}, ${checked ? "selected" : "not selected"}`
+            )
+            .w_full()
+            .min_w(0)
+            .px(6)
+            .py(4)
+            .gap(6)
+            .items_center()
+            .justify_between()
+            .rounded(4)
+            .bg(checked ? t.selected : t.surface)
+            .cursor_pointer()
+            .hover((s) => s.bg(t.hover))
+            .on_click((_e, clickCx) => {
+              clickCx.stop_propagation();
+              this.handle.focus();
+              this.toggleStatusFilterOption(entry.status, clickCx);
+            })
+            .child(
+              h_flex()
+                .flex_1()
+                .min_w(0)
+                .items_center()
+                .gap(6)
+                .child(
+                  h_flex()
+                    .flex_none()
+                    .w(12)
+                    .h(12)
+                    .rounded(3)
+                    .border_1()
+                    .border_color(checked ? t.accent : t.border)
+                    .bg(checked ? t.selected : t.surface)
+                    .items_center()
+                    .justify_center()
+                    .text_size(this.fs(9))
+                    .font_semibold()
+                    .text_color(t.accent)
+                    .child(checked ? "✓" : "")
+                )
+                .child(
+                  div()
+                    .flex_none()
+                    .w(5)
+                    .h(5)
+                    .rounded(999)
+                    .bg(sColor)
+                )
+                .child(
+                  div()
+                    .flex_1()
+                    .min_w(0)
+                    .truncate()
+                    .text_size(this.fs(11))
+                    .text_color(t.foreground)
+                    .child(entry.status)
+                )
+            )
+            .child(
+              div()
+                .id(`beads-status-filter-count-${entry.status}`)
+                .flex_none()
+                .font_semibold()
+                .text_size(this.fs(10))
+                .text_color(sColor)
+                .child(String(entry.count))
+            );
+        })
+      )
+      .when(!isDefaultActive && present.length > 0, (menu) =>
+        menu.child(
+          div()
+            .id("beads-status-filter-reset")
+            .role("button")
+            .accessibility_label("Reset status filter to Active")
+            .w_full()
+            .px(6)
+            .py(4)
+            .rounded(4)
+            .border_1()
+            .border_color(resetColors.border)
+            .bg(resetColors.bg)
+            .text_size(this.fs(10))
+            .text_color(resetColors.text)
+            .cursor_pointer()
+            .hover((s) => s.bg(resetColors.hoverBg))
+            .on_click((_e, clickCx) => {
+              clickCx.stop_propagation();
+              this.handle.focus();
+              this.resetStatusFilter(clickCx);
+            })
+            .child("Reset to Active")
+        )
+      );
   }
 
   renderContextMenuForIssue(issue, t) {
@@ -1757,9 +2066,13 @@ export default class BeadsDesktop extends View {
     const allowDetailPopup = canSelect && this.canOpenDetailPopup(this.currentContext);
     const scoreText = typeof rec.score === "number" ? `score ${rec.score.toFixed(2)}` : null;
     const isSelected = Boolean(rec.id && this.selectedId === rec.id);
-    const cardColors = rowColors({ selected: isSelected, highlighted: false }, t);
-    const pPill = rec.priority !== null ? priorityPillColors(rec.priority, t) : null;
     const matchedIssue = rec.id ? this.issues.find((issue) => issue.id === rec.id) ?? null : null;
+    const knownStatus = matchedIssue?.status ?? rec?.status ?? null;
+    const cardColors = rowColors(
+      { selected: isSelected, highlighted: false, status: knownStatus },
+      t
+    );
+    const pPill = rec.priority !== null ? priorityPillColors(rec.priority, t) : null;
     const tPill = matchedIssue?.issueType ? typePillColors(matchedIssue.issueType, t) : null;
     const sPill = matchedIssue?.status ? statusPillColors(matchedIssue.status, t) : null;
     const hasContextMenu = Boolean(allowDetailPopup && rec.id && this.contextMenu?.issueId === rec.id);
@@ -1768,12 +2081,11 @@ export default class BeadsDesktop extends View {
       .id(`${keyPrefix}-${rec.id || "item"}`)
       .w_full()
       .min_w(0)
-      .p(8)
-      .gap(4)
       .rounded(6)
       .border_1()
       .border_color(cardColors.border)
       .bg(cardColors.bg)
+      .overflow_hidden()
       .when(canSelect, (el) => el.cursor_pointer().hover((s) => s.bg(cardColors.hoverBg)))
       .when(allowDetailPopup, (el) =>
         el.on_mouse_down("right", (event, cx) => {
@@ -1787,65 +2099,77 @@ export default class BeadsDesktop extends View {
         }
       })
       .child(
-        h_flex()
+        v_flex()
           .w_full()
           .min_w(0)
-          .items_center()
-          .justify_between()
-          .gap(6)
+          .pl(cardColors.hasStateBorder ? 7 : 8)
+          .pr(8)
+          .py(8)
+          .gap(4)
+          .when(cardColors.hasStateBorder, (el) =>
+            el.border_l(3).border_color(cardColors.stateBorder)
+          )
           .child(
             h_flex()
-              .flex_1()
+              .w_full()
               .min_w(0)
               .items_center()
+              .justify_between()
               .gap(6)
               .child(
-                div()
-                  .flex_none()
-                  .font_semibold()
-                  .text_size(this.fs(11))
-                  .text_color(t.accent)
-                  .child(rec.id || "unknown")
-              )
-              .child(
-                div()
+                h_flex()
                   .flex_1()
                   .min_w(0)
-                  .truncate()
-                  .text_size(this.fs(12))
-                  .text_color(cardColors.text)
-                  .child(rec.title || "Untitled")
+                  .items_center()
+                  .gap(6)
+                  .child(
+                    div()
+                      .flex_none()
+                      .font_semibold()
+                      .text_size(this.fs(11))
+                      .text_color(t.accent)
+                      .child(rec.id || "unknown")
+                  )
+                  .child(
+                    div()
+                      .flex_1()
+                      .min_w(0)
+                      .truncate()
+                      .text_size(this.fs(12))
+                      .text_color(cardColors.text)
+                      .child(rec.title || "Untitled")
+                  )
+              )
+              .child(
+                h_flex()
+                  .flex_none()
+                  .items_center()
+                  .gap(4)
+                  .when(Boolean(pPill), (el) =>
+                    el.child(this.renderPill(`P${rec.priority}`, pPill, true))
+                  )
+                  .when(Boolean(tPill), (el) =>
+                    el.child(this.renderPill(matchedIssue.issueType, tPill))
+                  )
+                  .when(Boolean(sPill), (el) =>
+                    el.child(this.renderPill(matchedIssue.status, sPill))
+                  )
+                  .when(Boolean(scoreText), (el) =>
+                    el.child(div().flex_none().text_size(this.fs(10)).text_color(cardColors.dimText).child(scoreText))
+                  )
               )
           )
-          .child(
-            h_flex()
-              .flex_none()
-              .items_center()
-              .gap(4)
-              .when(Boolean(pPill), (el) =>
-                el.child(this.renderPill(`P${rec.priority}`, pPill, true))
-              )
-              .when(Boolean(tPill), (el) =>
-                el.child(this.renderPill(matchedIssue.issueType, tPill))
-              )
-              .when(Boolean(sPill), (el) =>
-                el.child(this.renderPill(matchedIssue.status, sPill))
-              )
-              .when(Boolean(scoreText), (el) =>
-                el.child(div().flex_none().text_size(this.fs(10)).text_color(cardColors.dimText).child(scoreText))
-              )
+          .when(rec.reasons.length > 0, (el) =>
+            el.child(
+              div()
+                .w_full()
+                .min_w(0)
+                .truncate()
+                .text_size(this.fs(11))
+                .text_color(cardColors.mutedText)
+                .child(rec.reasons.join(" · "))
+            )
           )
-      )
-      .when(rec.reasons.length > 0, (el) =>
-        el.child(
-          div()
-            .w_full()
-            .min_w(0)
-            .truncate()
-            .text_size(this.fs(11))
-            .text_color(cardColors.mutedText)
-            .child(rec.reasons.join(" · "))
-        )
       );
 
     if (!allowDetailPopup) {
@@ -1969,7 +2293,10 @@ export default class BeadsDesktop extends View {
     const isReady = this.readyIds.has(issue.id);
     const allowDetailPopup = this.canOpenDetailPopup(this.currentContext);
     const hasContextMenu = Boolean(allowDetailPopup && this.contextMenu?.issueId === issue.id);
-    const colors = rowColors({ selected: isSelected, highlighted: isHighlighted }, t);
+    const colors = rowColors(
+      { selected: isSelected, highlighted: isHighlighted, status: issue?.status },
+      t
+    );
     const pPill = priorityPillColors(issue.priority, t);
     const tPill = typePillColors(issue.issueType, t);
     const sPill = statusPillColors(issue.status, t);
@@ -1980,15 +2307,11 @@ export default class BeadsDesktop extends View {
       .w_full()
       .min_w(0)
       .flex_none()
-      .px(10)
-      .py(7)
-      .gap(6)
-      .items_center()
-      .justify_between()
       .rounded(6)
       .border_1()
       .border_color(colors.border)
       .bg(colors.bg)
+      .overflow_hidden()
       .cursor_pointer()
       .hover((s) => s.bg(colors.hoverBg))
       .when(allowDetailPopup, (el) =>
@@ -2002,37 +2325,51 @@ export default class BeadsDesktop extends View {
       })
       .child(
         h_flex()
-          .flex_1()
+          .w_full()
           .min_w(0)
-          .items_center()
+          .pl(colors.hasStateBorder ? 8 : 10)
+          .pr(10)
+          .py(7)
           .gap(6)
-          .child(
-            div()
-              .flex_none()
-              .font_semibold()
-              .text_size(this.fs(11))
-              .text_color(colors.mutedText)
-              .child(issue.id)
+          .items_center()
+          .justify_between()
+          .when(colors.hasStateBorder, (el) =>
+            el.border_l(3).border_color(colors.stateBorder)
           )
           .child(
-            div()
+            h_flex()
               .flex_1()
               .min_w(0)
-              .truncate()
-              .text_size(this.fs(12))
-              .text_color(colors.text)
-              .child(issue.title || "Untitled issue")
+              .items_center()
+              .gap(6)
+              .child(
+                div()
+                  .flex_none()
+                  .font_semibold()
+                  .text_size(this.fs(11))
+                  .text_color(colors.mutedText)
+                  .child(issue.id)
+              )
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(0)
+                  .truncate()
+                  .text_size(this.fs(12))
+                  .text_color(colors.text)
+                  .child(issue.title || "Untitled issue")
+              )
           )
-      )
-      .child(
-        h_flex()
-          .flex_none()
-          .items_center()
-          .gap(4)
-          .child(this.renderPill(`P${issue.priority}`, pPill, true))
-          .child(this.renderPill(issue.issueType, tPill))
-          .child(this.renderPill(issue.status, sPill))
-          .when(isReady, (el) => el.child(this.renderPill("ready", rPill, true)))
+          .child(
+            h_flex()
+              .flex_none()
+              .items_center()
+              .gap(4)
+              .child(this.renderPill(`P${issue.priority}`, pPill, true))
+              .child(this.renderPill(issue.issueType, tPill))
+              .child(this.renderPill(issue.status, sPill))
+              .when(isReady, (el) => el.child(this.renderPill("ready", rPill, true)))
+          )
       );
 
     if (!allowDetailPopup) {
@@ -2071,7 +2408,12 @@ export default class BeadsDesktop extends View {
             .p(10)
             .text_size(this.fs(12))
             .text_color(t.muted)
-            .child("No issues match the Ready filter.")
+            .child(
+              this.filter === "ready" &&
+                isDefaultActiveStatusSelection(this.issues, this.selectedStatuses)
+                ? "No issues match the Ready filter."
+                : "No issues match the current filter."
+            )
         )
       )
       .when(this.listState === "ready" && visible.length > 0, (el) =>
@@ -2090,7 +2432,7 @@ export default class BeadsDesktop extends View {
   }
 
   currentChromeHeight() {
-    const baseChrome = 96;
+    const baseChrome = 116;
     const bvChrome = this.bvAvailable && this.bvState !== "idle" ? 96 : 0;
     return baseChrome + bvChrome;
   }
