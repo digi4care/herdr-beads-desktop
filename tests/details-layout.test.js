@@ -7,6 +7,7 @@ import {
   MIN_DETAILS_HEIGHT,
   MIN_LIST_HEIGHT,
   DEFAULT_DIVIDER_HEIGHT,
+  DEFAULT_COLLAPSED_DETAILS_HEIGHT,
   DEFAULT_PANEL_HEIGHT,
   DETAILS_RATIO_STORAGE_KEY,
   normalizeDetailsRatio,
@@ -22,7 +23,10 @@ import {
   sizesToDetailsRatio,
   loadDetailsRatio,
   saveDetailsRatio,
-  computePopupLayout
+  computePopupLayout,
+  projectKeyForContext,
+  loadProjectDetailsLayout,
+  saveProjectDetailsLayout
 } from "../mods/beads-desktop/details-layout.js";
 
 test("normalizeDetailsRatio parses valid ratios and falls back on invalid inputs", () => {
@@ -305,4 +309,147 @@ test("computePopupLayout produces responsive dimensions for detail and full-mod 
   assert.ok(detailPopup.width >= 420 && detailPopup.width <= 960);
   assert.ok(detailPopup.height >= 300 && detailPopup.height <= 760);
   assert.ok(detailPopup.bodyHeight > 200);
+});
+
+test("projectKeyForContext shares one key across tabs of the same project and separates distinct projects", () => {
+  const tabA = {
+    key: "local:space-1:tab-a::/projects/alpha",
+    machine: null,
+    spaceId: "space-1",
+    tabId: "tab-a",
+    cwd: "/projects/alpha"
+  };
+  const tabB = {
+    key: "local:space-1:tab-b::/projects/alpha",
+    machine: null,
+    spaceId: "space-1",
+    tabId: "tab-b",
+    cwd: "/projects/alpha/"
+  };
+  const otherProject = {
+    key: "local:space-1:tab-c::/projects/beta",
+    machine: null,
+    spaceId: "space-1",
+    tabId: "tab-c",
+    cwd: "/projects/beta"
+  };
+  const remoteProject = {
+    key: "remote:space-1:tab-a:devbox:/projects/alpha",
+    machine: "devbox",
+    spaceId: "space-1",
+    tabId: "tab-a",
+    cwd: "/projects/alpha"
+  };
+
+  assert.equal(projectKeyForContext(tabA), projectKeyForContext(tabB));
+  assert.equal(projectKeyForContext(tabA), "local|space-1|/projects/alpha");
+  assert.notEqual(projectKeyForContext(tabA), projectKeyForContext(otherProject));
+  assert.notEqual(projectKeyForContext(tabA), projectKeyForContext(remoteProject));
+});
+
+test("per-project layout migrates from legacy global ratio, stored project value always wins, and tabs share state", () => {
+  const store = new Map();
+  const storage = {
+    get(key) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    set(key, value) {
+      store.set(key, String(value));
+    }
+  };
+
+  // Seed legacy global ratio
+  store.set(DETAILS_RATIO_STORAGE_KEY, "0.52");
+
+  const projectATab1 = { machine: null, spaceId: "ws-1", tabId: "tab-1", cwd: "/repo/a" };
+  const projectATab2 = { machine: null, spaceId: "ws-1", tabId: "tab-2", cwd: "/repo/a" };
+  const projectB = { machine: null, spaceId: "ws-1", tabId: "tab-3", cwd: "/repo/b" };
+
+  // Project A has no stored ratio yet -> falls back to legacy global 0.52, collapsed defaults to false
+  const initialA = loadProjectDetailsLayout({ context: projectATab1, storage });
+  assert.equal(initialA.detailRatio, 0.52);
+  assert.equal(initialA.detailsCollapsed, false);
+  assert.equal(initialA.hasStoredRatio, false);
+
+  // User resizes Project A in tab 1 to 0.31
+  const savedA = saveProjectDetailsLayout(
+    { detailRatio: 0.31 },
+    { context: projectATab1, storage, panelHeight: 600, chromeHeight: 96, dividerHeight: 6 }
+  );
+  assert.equal(savedA.persisted, true);
+  assert.equal(savedA.detailRatio, 0.31);
+
+  // Switching to tab 2 of Project A keeps the shared 0.31 ratio
+  const tab2A = loadProjectDetailsLayout({ context: projectATab2, storage });
+  assert.equal(tab2A.detailRatio, 0.31);
+  assert.equal(tab2A.hasStoredRatio, true);
+
+  // Even if legacy global ratio changes or is present, Project A's stored ratio always wins
+  store.set(DETAILS_RATIO_STORAGE_KEY, "0.64");
+  assert.equal(loadProjectDetailsLayout({ context: projectATab1, storage }).detailRatio, 0.31);
+
+  // Switching to Project B (no stored project ratio) falls back to the legacy global ratio
+  const initialB = loadProjectDetailsLayout({ context: projectB, storage });
+  assert.equal(initialB.detailRatio, 0.64);
+  assert.equal(initialB.detailsCollapsed, false);
+
+  // Collapsing details in Project B persists per project without affecting Project A
+  saveProjectDetailsLayout({ detailsCollapsed: true }, { context: projectB, storage });
+  const reloadedB = loadProjectDetailsLayout({ context: projectB, storage });
+  assert.equal(reloadedB.detailsCollapsed, true);
+  assert.equal(reloadedB.detailRatio, 0.64);
+
+  const reloadedA = loadProjectDetailsLayout({ context: projectATab1, storage });
+  assert.equal(reloadedA.detailsCollapsed, false);
+  assert.equal(reloadedA.detailRatio, 0.31);
+});
+
+test("collapsing details expands list height to remaining space, preserves stored ratio, and disables divider drag", () => {
+  const expanded = computeDetailsLayout({
+    panelHeight: 600,
+    ratio: 0.45,
+    chromeHeight: 96,
+    dividerHeight: 6,
+    collapsed: false
+  });
+  const collapsed = computeDetailsLayout({
+    panelHeight: 600,
+    ratio: 0.45,
+    chromeHeight: 96,
+    dividerHeight: 6,
+    collapsed: true
+  });
+
+  assert.equal(expanded.collapsed, false);
+  assert.equal(collapsed.collapsed, true);
+  assert.equal(collapsed.detailsHeight, DEFAULT_COLLAPSED_DETAILS_HEIGHT);
+  assert.equal(collapsed.listHeight, collapsed.availableHeight - DEFAULT_COLLAPSED_DETAILS_HEIGHT);
+  assert.ok(collapsed.listHeight > expanded.listHeight);
+  // Stored ratio is preserved so reopening restores the same height
+  assert.equal(collapsed.ratio, 0.45);
+
+  const reopened = computeDetailsLayout({
+    panelHeight: 600,
+    ratio: collapsed.ratio,
+    chromeHeight: 96,
+    dividerHeight: 6,
+    collapsed: false
+  });
+  assert.equal(reopened.detailsHeight, expanded.detailsHeight);
+
+  // Divider drag while collapsed is a no-op
+  const dragWhileCollapsed = resolveDividerDrag({
+    pointerY: 180,
+    startY: 350,
+    startRatio: 0.45,
+    currentRatio: 0.45,
+    panelHeight: 600,
+    chromeHeight: 96,
+    dividerHeight: 6,
+    collapsed: true
+  });
+  assert.equal(dragWhileCollapsed.changed, false);
+  assert.equal(dragWhileCollapsed.ratio, 0.45);
+  assert.equal(dragWhileCollapsed.collapsed, true);
+  assert.equal(dragWhileCollapsed.detailsHeight, DEFAULT_COLLAPSED_DETAILS_HEIGHT);
 });

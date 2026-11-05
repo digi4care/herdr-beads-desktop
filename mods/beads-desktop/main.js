@@ -27,10 +27,20 @@ import {
   DEFAULT_PANEL_HEIGHT,
   computeDetailsLayout,
   computePopupLayout,
-  loadDetailsRatio,
+  loadProjectDetailsLayout,
+  projectKeyForContext,
   resolveDividerDrag,
-  saveDetailsRatio
+  saveProjectDetailsLayout
 } from "./details-layout.js";
+import {
+  PROJECT_STATE_STORAGE_KEY,
+  getProjectLayout,
+  projectStateKey,
+  readProjectState,
+  resolveProjectDetailRatio,
+  setProjectLayout,
+  writeProjectState
+} from "./project-state.js";
 import {
   computeSvgDisplaySize,
   hashString,
@@ -407,11 +417,16 @@ export default class BeadsDesktop extends View {
     this.mermaidStates = new Map();
     this.mermaidCacheDirReady = false;
 
-    this.detailsRatio = loadDetailsRatio({
+    const initialContext = getActiveContext(this.currentContext ?? null);
+    const initialProjectLayout = loadProjectDetailsLayout({
+      context: initialContext,
       storage: herdrSharedStorage,
       fallbackStorage: getFallbackLocalStorage(),
       fallbackRatio: DEFAULT_DETAILS_RATIO
     });
+    this.projectKey = initialProjectLayout.projectKey;
+    this.detailsRatio = initialProjectLayout.detailRatio;
+    this.detailsCollapsed = initialProjectLayout.detailsCollapsed;
 
     if (this.isOverlay) {
       const viewport = measureViewportSize(380, DEFAULT_PANEL_HEIGHT);
@@ -419,7 +434,8 @@ export default class BeadsDesktop extends View {
         viewportWidth: viewport.width,
         viewportHeight: viewport.height,
         mode: this.popupMode ?? "detail",
-        detailsRatio: this.detailsRatio
+        detailsRatio: this.detailsRatio,
+        detailsCollapsed: this.detailsCollapsed
       });
       this.panelWidth =
         typeof instanceProps.popupWidth === "number" && instanceProps.popupWidth > 0
@@ -622,15 +638,54 @@ export default class BeadsDesktop extends View {
     return scaleFont(n, (this.appSettings ?? DEFAULT_SETTINGS).fontScale);
   }
 
+  syncProjectLayoutForContext(context = this.currentContext) {
+    const nextProjectKey = projectKeyForContext(context);
+    if (nextProjectKey !== this.projectKey) {
+      this.dividerDragging = false;
+      this.dividerDragStart = null;
+      this.dividerHovered = false;
+    }
+    const latestLayout = loadProjectDetailsLayout({
+      context,
+      projectKey: nextProjectKey,
+      storage: herdrSharedStorage,
+      fallbackStorage: getFallbackLocalStorage(),
+      fallbackRatio: DEFAULT_DETAILS_RATIO
+    });
+    this.projectKey = latestLayout.projectKey;
+    if (!this.dividerDragging) {
+      this.detailsRatio = latestLayout.detailRatio;
+    }
+    this.detailsCollapsed = latestLayout.detailsCollapsed;
+    if (this.detailsCollapsed) {
+      this.dividerDragging = false;
+      this.dividerDragStart = null;
+      this.dividerHovered = false;
+    }
+    return latestLayout;
+  }
+
   syncFromSharedState(cx) {
     this.syncSettings();
-    const latestRatio = loadDetailsRatio({
+    const activeContext = getActiveContext(this.currentContext ?? null);
+    const latestLayout = loadProjectDetailsLayout({
+      context: activeContext,
+      projectKey: this.projectKey || projectKeyForContext(activeContext),
       storage: herdrSharedStorage,
       fallbackStorage: getFallbackLocalStorage(),
       fallbackRatio: this.detailsRatio
     });
-    if (Math.abs(latestRatio - this.detailsRatio) > 0.0001 && !this.dividerDragging) {
-      this.detailsRatio = latestRatio;
+    this.projectKey = latestLayout.projectKey;
+    if (Math.abs(latestLayout.detailRatio - this.detailsRatio) > 0.0001 && !this.dividerDragging) {
+      this.detailsRatio = latestLayout.detailRatio;
+    }
+    if (latestLayout.detailsCollapsed !== this.detailsCollapsed) {
+      this.detailsCollapsed = latestLayout.detailsCollapsed;
+      if (this.detailsCollapsed) {
+        this.dividerDragging = false;
+        this.dividerDragStart = null;
+        this.dividerHovered = false;
+      }
     }
 
     if (!this.contextKey || this.popupMode === "detail") return;
@@ -666,6 +721,7 @@ export default class BeadsDesktop extends View {
     }
     this.contextKey = context.key;
     this.currentContext = context;
+    this.syncProjectLayoutForContext(context);
     this.resetProjectState();
     this.restoreSelectionForContext(context);
     this.lastProbeTime = 0;
@@ -928,7 +984,8 @@ export default class BeadsDesktop extends View {
       viewportWidth: viewport.width,
       viewportHeight: viewport.height,
       mode,
-      detailsRatio: this.detailsRatio
+      detailsRatio: this.detailsRatio,
+      detailsCollapsed: this.detailsCollapsed
     });
   }
 
@@ -1119,6 +1176,16 @@ export default class BeadsDesktop extends View {
     }
 
     if (this.popupMode === "detail" || this.showSettings) return;
+
+    if (
+      key === "d" &&
+      this.currentContext?.supported &&
+      (this.listState === "ready" || this.listState === "empty")
+    ) {
+      cx.stop_propagation();
+      this.toggleDetailsCollapsed(cx);
+      return;
+    }
 
     const visible = this.visibleIssues();
     if (visible.length === 0) return;
@@ -2099,22 +2166,63 @@ export default class BeadsDesktop extends View {
     return computeDetailsLayout({
       panelHeight: this.panelHeight,
       ratio: this.detailsRatio,
+      collapsed: this.detailsCollapsed,
       chromeHeight: this.currentChromeHeight(),
       dividerHeight: DEFAULT_DIVIDER_HEIGHT
     });
   }
 
   persistDetailsRatio(ratio = this.detailsRatio) {
-    const saved = saveDetailsRatio(ratio, {
-      storage: herdrSharedStorage,
-      fallbackStorage: getFallbackLocalStorage(),
-      panelHeight: this.panelHeight,
-      chromeHeight: this.currentChromeHeight(),
-      dividerHeight: DEFAULT_DIVIDER_HEIGHT,
-      fallbackRatio: DEFAULT_DETAILS_RATIO
-    });
-    this.detailsRatio = saved.ratio;
+    const activeContext = getActiveContext(this.currentContext ?? null);
+    const saved = saveProjectDetailsLayout(
+      { detailRatio: ratio },
+      {
+        context: activeContext,
+        projectKey: this.projectKey || projectKeyForContext(activeContext),
+        storage: herdrSharedStorage,
+        fallbackStorage: getFallbackLocalStorage(),
+        panelHeight: this.panelHeight,
+        chromeHeight: this.currentChromeHeight(),
+        dividerHeight: DEFAULT_DIVIDER_HEIGHT,
+        fallbackRatio: DEFAULT_DETAILS_RATIO
+      }
+    );
+    this.projectKey = saved.projectKey;
+    this.detailsRatio = saved.detailRatio;
+    return {
+      ratio: saved.detailRatio,
+      persisted: saved.persisted
+    };
+  }
+
+  setDetailsCollapsed(collapsed, cx = null) {
+    const nextCollapsed = Boolean(collapsed);
+    this.detailsCollapsed = nextCollapsed;
+    if (nextCollapsed) {
+      this.dividerDragging = false;
+      this.dividerDragStart = null;
+      this.dividerHovered = false;
+    }
+    const activeContext = getActiveContext(this.currentContext ?? null);
+    const saved = saveProjectDetailsLayout(
+      { detailsCollapsed: nextCollapsed },
+      {
+        context: activeContext,
+        projectKey: this.projectKey || projectKeyForContext(activeContext),
+        storage: herdrSharedStorage,
+        fallbackStorage: getFallbackLocalStorage(),
+        fallbackRatio: this.detailsRatio
+      }
+    );
+    this.projectKey = saved.projectKey;
+    if (cx) {
+      cx.notify();
+    }
     return saved;
+  }
+
+  toggleDetailsCollapsed(cx = null) {
+    return this.setDetailsCollapsed(!this.detailsCollapsed, cx);
   }
 
   handlePanelSizeChange(size, cx) {
@@ -2142,6 +2250,7 @@ export default class BeadsDesktop extends View {
   }
 
   startDividerDrag(event, cx) {
+    if (this.detailsCollapsed) return;
     const pointerY = event?.position?.y;
     if (typeof pointerY !== "number" || !Number.isFinite(pointerY)) return;
 
@@ -2157,7 +2266,7 @@ export default class BeadsDesktop extends View {
   }
 
   updateDividerDrag(event, cx) {
-    if (!this.dividerDragging || !this.dividerDragStart) return false;
+    if (this.detailsCollapsed || !this.dividerDragging || !this.dividerDragStart) return false;
     const pointerY = event?.position?.y;
     if (typeof pointerY !== "number" || !Number.isFinite(pointerY)) return false;
 
@@ -2169,6 +2278,7 @@ export default class BeadsDesktop extends View {
       startRatio: this.dividerDragStart.startRatio,
       startDetailsHeight: this.dividerDragStart.startDetailsHeight,
       currentRatio: this.detailsRatio,
+      collapsed: this.detailsCollapsed,
       chromeHeight: this.currentChromeHeight(),
       dividerHeight: DEFAULT_DIVIDER_HEIGHT
     });
@@ -2193,10 +2303,11 @@ export default class BeadsDesktop extends View {
   }
 
   renderDetailsDivider(t) {
+    const collapsed = Boolean(this.detailsCollapsed);
     const divColors = dividerColors(
       {
-        active: this.dividerDragging,
-        hovered: this.dividerHovered
+        active: !collapsed && this.dividerDragging,
+        hovered: !collapsed && this.dividerHovered
       },
       t
     );
@@ -2204,7 +2315,11 @@ export default class BeadsDesktop extends View {
     return h_flex()
       .id("beads-details-divider")
       .role("splitter")
-      .accessibility_label("Resize issue details pane")
+      .accessibility_label(
+        collapsed
+          ? "Issue details pane divider (expand details to resize)"
+          : "Resize issue details pane"
+      )
       .flex_none()
       .w_full()
       .h(DEFAULT_DIVIDER_HEIGHT)
@@ -2213,33 +2328,36 @@ export default class BeadsDesktop extends View {
       .border_t(1)
       .border_color(divColors.color)
       .bg(divColors.bg)
-      .cursor_row_resize()
-      .on_hover((hovered, hoverCx) => {
-        if (this.dividerHovered !== hovered) {
-          this.dividerHovered = hovered;
-          hoverCx.notify();
-        }
-      })
-      .on_mouse_down("left", (event, downCx) => {
-        this.startDividerDrag(event, downCx);
-      })
-      .on_mouse_move((event, moveCx) => {
-        if (this.dividerDragging) {
-          moveCx.stop_propagation();
-          this.updateDividerDrag(event, moveCx);
-        }
-      })
-      .on_mouse_up("left", (event, upCx) => {
-        if (this.dividerDragging) {
-          upCx.stop_propagation();
-          this.finishDividerDrag(event, upCx);
-        }
-      })
-      .on_mouse_down_out((_event, outCx) => {
-        if (this.dividerDragging) {
-          this.finishDividerDrag(null, outCx);
-        }
-      })
+      .when(!collapsed, (el) =>
+        el
+          .cursor_row_resize()
+          .on_hover((hovered, hoverCx) => {
+            if (this.dividerHovered !== hovered) {
+              this.dividerHovered = hovered;
+              hoverCx.notify();
+            }
+          })
+          .on_mouse_down("left", (event, downCx) => {
+            this.startDividerDrag(event, downCx);
+          })
+          .on_mouse_move((event, moveCx) => {
+            if (this.dividerDragging) {
+              moveCx.stop_propagation();
+              this.updateDividerDrag(event, moveCx);
+            }
+          })
+          .on_mouse_up("left", (event, upCx) => {
+            if (this.dividerDragging) {
+              upCx.stop_propagation();
+              this.finishDividerDrag(event, upCx);
+            }
+          })
+          .on_mouse_down_out((_event, outCx) => {
+            if (this.dividerDragging) {
+              this.finishDividerDrag(null, outCx);
+            }
+          })
+      )
       .child(
         div()
           .w(32)
@@ -2755,8 +2873,16 @@ export default class BeadsDesktop extends View {
   }
 
   renderDetailsSection(detailsLayout, t, cx) {
+    const collapsed = Boolean(this.detailsCollapsed);
     const divider = dividerColors({}, t);
     const popupBtnColors = controlColors(
+      {
+        mutedWhenInactive: true,
+        variant: this.appSettings.buttonVariant
+      },
+      t
+    );
+    const toggleBtnColors = controlColors(
       {
         mutedWhenInactive: true,
         variant: this.appSettings.buttonVariant
@@ -2766,30 +2892,53 @@ export default class BeadsDesktop extends View {
     const showOpenDetailPopup =
       this.canOpenDetailPopup(this.currentContext) &&
       Boolean(this.selectedId && this.detailState === "ready" && this.selectedIssue);
+    const headerChevron = collapsed ? "▸" : "▾";
+    const toggleLabel = collapsed ? "▸ Expand (d)" : "▾ Collapse (d)";
+    const toggleTooltip = collapsed ? "Expand issue details (d)" : "Collapse issue details (d)";
 
     return v_flex()
       .id("beads-details-pane")
       .flex_none()
-      .h(detailsLayout.detailsHeight)
+      .when(!collapsed, (el) => el.h(detailsLayout.detailsHeight))
       .w_full()
       .min_w(0)
       .bg(t.surface)
       .child(
         h_flex()
+          .id("beads-details-header")
           .flex_none()
           .px(12)
           .py(7)
           .items_center()
           .justify_between()
           .gap(6)
-          .border_b(1)
-          .border_color(divider.color)
+          .when(!collapsed, (el) => el.border_b(1).border_color(divider.color))
           .child(
-            div()
-              .font_semibold()
-              .text_size(this.fs(11))
-              .text_color(t.muted)
-              .child(this.selectedId ? `Details · ${this.selectedId}` : "Issue Details")
+            h_flex()
+              .id("beads-details-header-title")
+              .min_w(0)
+              .items_center()
+              .gap(5)
+              .cursor_pointer()
+              .on_click((_e, clickCx) => {
+                this.handle.focus();
+                this.toggleDetailsCollapsed(clickCx);
+              })
+              .child(
+                div()
+                  .flex_none()
+                  .text_size(this.fs(11))
+                  .text_color(t.muted)
+                  .child(headerChevron)
+              )
+              .child(
+                div()
+                  .font_semibold()
+                  .truncate()
+                  .text_size(this.fs(11))
+                  .text_color(t.muted)
+                  .child(this.selectedId ? `Details · ${this.selectedId}` : "Issue Details")
+              )
           )
           .child(
             h_flex()
@@ -2824,9 +2973,40 @@ export default class BeadsDesktop extends View {
                     .child("Open in popup")
                 )
               )
+              .child(
+                div()
+                  .id("beads-details-toggle")
+                  .role("button")
+                  .accessibility_label(toggleTooltip)
+                  .tooltip(toggleTooltip)
+                  .px(6)
+                  .py(2)
+                  .rounded(4)
+                  .border_1()
+                  .border_color(toggleBtnColors.border)
+                  .bg(toggleBtnColors.bg)
+                  .text_size(this.fs(10))
+                  .text_color(toggleBtnColors.text)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(toggleBtnColors.hoverBg))
+                  .on_key_down((event, keyCx) => {
+                    const key = (event.key || "").toLowerCase();
+                    if (key === "enter" || key === " " || key === "space") {
+                      keyCx.stop_propagation();
+                      this.toggleDetailsCollapsed(keyCx);
+                    }
+                  })
+                  .on_click((_e, clickCx) => {
+                    this.handle.focus();
+                    this.toggleDetailsCollapsed(clickCx);
+                  })
+                  .child(toggleLabel)
+              )
           )
       )
-      .child(this.renderDetailsScrollContent("beads-details-scroll", t, cx));
+      .when(!collapsed, (el) =>
+        el.child(this.renderDetailsScrollContent("beads-details-scroll", t, cx))
+      );
   }
 
   renderDetailPopupView(t, cx) {

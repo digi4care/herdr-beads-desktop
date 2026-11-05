@@ -1,9 +1,19 @@
+import {
+  getProjectLayout,
+  projectStateKey,
+  readProjectState,
+  resolveProjectDetailRatio,
+  setProjectLayout,
+  writeProjectState
+} from "./project-state.js";
+
 export const DEFAULT_DETAILS_RATIO = 0.38;
 export const MIN_DETAILS_RATIO = 0.18;
 export const MAX_DETAILS_RATIO = 0.72;
 export const MIN_DETAILS_HEIGHT = 108;
 export const MIN_LIST_HEIGHT = 140;
 export const DEFAULT_DIVIDER_HEIGHT = 6;
+export const DEFAULT_COLLAPSED_DETAILS_HEIGHT = 34;
 export const DEFAULT_PANEL_HEIGHT = 600;
 export const DETAILS_RATIO_STORAGE_KEY = "beads-desktop:details-height-ratio";
 
@@ -223,10 +233,17 @@ export function computeDetailsLayout(firstArg = {}, secondArg = {}, thirdArg = {
   });
 
   const rawDetailsPx = Math.round(effectivePanelHeight * clampedRatio);
-  const detailsHeight = clamp(rawDetailsPx, bounds.minDetailsHeight, bounds.maxDetailsHeight);
+  const expandedDetailsHeight = clamp(rawDetailsPx, bounds.minDetailsHeight, bounds.maxDetailsHeight);
+  const collapsed = options.collapsed === true || options.detailsCollapsed === true;
+  const rawCollapsedHeight = toFiniteNumber(options.collapsedHeight);
+  const collapsedDetailsHeight = Math.min(
+    bounds.availableHeight,
+    Math.max(0, Math.round(rawCollapsedHeight ?? DEFAULT_COLLAPSED_DETAILS_HEIGHT))
+  );
+  const detailsHeight = collapsed ? collapsedDetailsHeight : expandedDetailsHeight;
   const listHeight = Math.max(0, bounds.availableHeight - detailsHeight);
   const effectiveRatio =
-    effectivePanelHeight > 0 ? roundRatio(detailsHeight / effectivePanelHeight) : clampedRatio;
+    effectivePanelHeight > 0 ? roundRatio(expandedDetailsHeight / effectivePanelHeight) : clampedRatio;
 
   return {
     panelHeight: effectivePanelHeight,
@@ -241,7 +258,8 @@ export function computeDetailsLayout(firstArg = {}, secondArg = {}, thirdArg = {
     maxRatio: bounds.maxRatio,
     minDetailsHeight: bounds.minDetailsHeight,
     maxDetailsHeight: bounds.maxDetailsHeight,
-    isCompact: bounds.isCompact
+    isCompact: bounds.isCompact,
+    collapsed
   };
 }
 
@@ -331,6 +349,24 @@ export function pointerToDetailsRatio(firstArg = {}, secondArg = {}, thirdArg = 
 
 export function resolveDividerDrag(options = {}) {
   const safeOptions = options && typeof options === "object" ? options : {};
+  const collapsed = safeOptions.collapsed === true || safeOptions.detailsCollapsed === true;
+  if (collapsed) {
+    const preservedRatio = normalizeDetailsRatio(
+      safeOptions.currentRatio ?? safeOptions.startRatio,
+      safeOptions.fallbackRatio ?? DEFAULT_DETAILS_RATIO
+    );
+    const layout = computeDetailsLayout({
+      ...safeOptions,
+      ratio: preservedRatio,
+      collapsed: true
+    });
+    return {
+      ...layout,
+      ratio: preservedRatio,
+      changed: false
+    };
+  }
+
   const nextRatio = pointerToDetailsRatio(safeOptions);
   const layout = computeDetailsLayout({
     ...safeOptions,
@@ -511,6 +547,7 @@ export function computePopupLayout(options = {}) {
       ? computeDetailsLayout({
           panelHeight: height,
           ratio: safeOptions.detailsRatio ?? safeOptions.ratio ?? DEFAULT_DETAILS_RATIO,
+          collapsed: safeOptions.detailsCollapsed === true || safeOptions.collapsed === true,
           chromeHeight: headerChromeHeight,
           dividerHeight: safeOptions.dividerHeight ?? DEFAULT_DIVIDER_HEIGHT,
           minDetailsHeight: safeOptions.minDetailsHeight ?? MIN_DETAILS_HEIGHT,
@@ -528,5 +565,104 @@ export function computePopupLayout(options = {}) {
     heightShare: roundRatio(height / viewportHeight),
     bodyHeight,
     detailsLayout
+  };
+}
+
+export function projectKeyForContext(context = null) {
+  if (!context || typeof context !== "object") {
+    return projectStateKey();
+  }
+  return projectStateKey({
+    machine: context.machine,
+    workspace: context.workspace ?? context.spaceId,
+    cwd: context.cwd
+  });
+}
+
+function readProjectStateWithFallback({ storage, fallbackStorage } = {}) {
+  const primary = resolveStorage(storage);
+  const primaryState = readProjectState(primary);
+  if (Object.keys(primaryState).length > 0 || !fallbackStorage) {
+    return primaryState;
+  }
+  return readProjectState(fallbackStorage);
+}
+
+export function loadProjectDetailsLayout(options = {}) {
+  const safeOptions = options && typeof options === "object" ? options : {};
+  const projectKey =
+    typeof safeOptions.projectKey === "string" && safeOptions.projectKey
+      ? safeOptions.projectKey
+      : projectKeyForContext(safeOptions.context);
+  const state = readProjectStateWithFallback(safeOptions);
+  const legacyRatio = loadDetailsRatio({
+    storage: safeOptions.storage,
+    fallbackStorage: safeOptions.fallbackStorage,
+    fallbackRatio: safeOptions.fallbackRatio ?? DEFAULT_DETAILS_RATIO
+  });
+  const layout = getProjectLayout(state, projectKey);
+  const detailRatio = resolveProjectDetailRatio({
+    state,
+    projectKey,
+    legacyRatio
+  });
+
+  return {
+    projectKey,
+    detailRatio,
+    detailsCollapsed: Boolean(layout.detailsCollapsed),
+    hasStoredRatio: typeof layout.detailRatio === "number",
+    state
+  };
+}
+
+export function saveProjectDetailsLayout(patch = {}, options = {}) {
+  const safePatch = patch && typeof patch === "object" ? patch : {};
+  const safeOptions = options && typeof options === "object" ? options : {};
+  const projectKey =
+    typeof safeOptions.projectKey === "string" && safeOptions.projectKey
+      ? safeOptions.projectKey
+      : projectKeyForContext(safeOptions.context);
+  const fallbackRatio = safeOptions.fallbackRatio ?? DEFAULT_DETAILS_RATIO;
+  const rawPanelHeight = toFiniteNumber(safeOptions.panelHeight);
+  const hasPanelHeight = rawPanelHeight !== null && rawPanelHeight > 0;
+
+  const normalizedPatch = {};
+  if (safePatch.detailRatio !== undefined && safePatch.detailRatio !== null) {
+    normalizedPatch.detailRatio = hasPanelHeight
+      ? clampDetailsRatio(safePatch.detailRatio, safeOptions)
+      : normalizeDetailsRatio(safePatch.detailRatio, fallbackRatio);
+  }
+  if (typeof safePatch.detailsCollapsed === "boolean") {
+    normalizedPatch.detailsCollapsed = safePatch.detailsCollapsed;
+  }
+
+  const currentState = readProjectStateWithFallback(safeOptions);
+  const nextState = setProjectLayout(currentState, projectKey, normalizedPatch);
+  const primary = resolveStorage(safeOptions.storage);
+
+  let persisted = writeProjectState(primary, nextState);
+  if (!persisted && safeOptions.fallbackStorage) {
+    persisted = writeProjectState(safeOptions.fallbackStorage, nextState);
+  }
+
+  const legacyRatio = loadDetailsRatio({
+    storage: safeOptions.storage,
+    fallbackStorage: safeOptions.fallbackStorage,
+    fallbackRatio
+  });
+  const layout = getProjectLayout(nextState, projectKey);
+  const detailRatio = resolveProjectDetailRatio({
+    state: nextState,
+    projectKey,
+    legacyRatio
+  });
+
+  return {
+    projectKey,
+    detailRatio,
+    detailsCollapsed: Boolean(layout.detailsCollapsed),
+    persisted,
+    state: nextState
   };
 }
