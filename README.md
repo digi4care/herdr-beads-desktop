@@ -19,9 +19,9 @@ Tests use Node's built-in `node:test`; no external packages are required.
 
 ## Screenshots
 
-| Default panel (Active list + inline details) | Settings view |
+| Issue list | Settings view |
 |---|---|
-| ![Default panel](screenshots/panel-default.png) | ![Settings view](screenshots/settings.png) |
+| ![Issue list](screenshots/list-popup.png) | ![Settings view](screenshots/settings.png) |
 
 | BV Triage recommendation card | Issue details popup |
 |---|---|
