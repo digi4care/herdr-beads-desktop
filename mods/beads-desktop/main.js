@@ -25,6 +25,7 @@ import {
   isDefaultActiveStatusSelection,
   presentStatusEntries,
   resolveSelectedStatuses,
+  sortIssues,
   toggleStatusFilter
 } from "./data.js";
 import { formatIssueReference, sanitizeSingleLine } from "./issue-reference.js";
@@ -760,7 +761,9 @@ export default class BeadsDesktop extends View {
   }
 
   visibleIssues() {
-    return filterIssues(this.issues, this.readyIds, this.filter, this.selectedStatuses);
+    const filtered = filterIssues(this.issues, this.readyIds, this.filter, this.selectedStatuses);
+    const sortMode = (this.appSettings ?? DEFAULT_SETTINGS).sortMode ?? "default";
+    return sortIssues(filtered, sortMode);
   }
 
   applyFilterSelectionChange(cx) {
@@ -1728,6 +1731,22 @@ export default class BeadsDesktop extends View {
         })
       )
       .child(
+        this.renderSegmented({
+          idPrefix: "setting-sortmode",
+          label: "Issue sort",
+          value: (this.appSettings ?? DEFAULT_SETTINGS).sortMode,
+          options: [
+            { id: "setting-sortmode-default", key: "default", label: "Default", value: "default" },
+            { id: "setting-sortmode-priority", key: "priority", label: "Priority", value: "priority" },
+            { id: "setting-sortmode-newest", key: "newest", label: "Newest", value: "newest" },
+            { id: "setting-sortmode-oldest", key: "oldest", label: "Oldest", value: "oldest" },
+            { id: "setting-sortmode-updated", key: "updated", label: "Updated", value: "updated" }
+          ],
+          onSelect: (nextValue, cx) => this.updateSetting({ sortMode: nextValue }, cx),
+          t
+        })
+      )
+      .child(
         v_flex()
           .w_full()
           .min_w(0)
@@ -1858,6 +1877,7 @@ export default class BeadsDesktop extends View {
           .child(filterButton("filter-ready", `Ready (${readyCount})`, "ready"))
           .child(this.renderStatusFilterDropdown(t))
           .child(this.renderViewModeToggle(t))
+          .child(this.renderSortModeToggle(t))
       )
       .child(bvSection);
   }
@@ -2468,6 +2488,35 @@ export default class BeadsDesktop extends View {
             )
         )
       );
+  }
+
+  renderSortModeToggle(t) {
+    const mode = (this.appSettings ?? DEFAULT_SETTINGS).sortMode ?? "default";
+    const labels = { default: "Sort: default", priority: "Sort: priority", newest: "Sort: newest", oldest: "Sort: oldest", updated: "Sort: updated" };
+    const order = ["default", "priority", "newest", "oldest", "updated"];
+    const colors = controlColors(
+      { mutedWhenInactive: true, variant: this.appSettings.buttonVariant },
+      t
+    );
+    return div()
+      .id("beads-sort-mode-toggle")
+      .px(8)
+      .py(3)
+      .rounded(5)
+      .border_1()
+      .border_color(colors.border)
+      .bg(colors.bg)
+      .text_size(this.fs(11))
+      .text_color(colors.text)
+      .cursor_pointer()
+      .hover((s) => s.bg(colors.hoverBg))
+      .on_click((_e, cx) => {
+        this.handle.focus();
+        const idx = order.indexOf(mode);
+        const next = order[(idx + 1) % order.length];
+        this.updateSetting({ sortMode: next }, cx);
+      })
+      .child(labels[mode] || "Sort");
   }
 
   renderViewModeToggle(t) {

@@ -247,3 +247,74 @@ export function parseBrList(payload) {
     hasMore: payload.has_more === true
   };
 }
+
+const STATUS_SORT_ORDER = Object.freeze({
+  in_progress: 0,
+  open: 1,
+  blocked: 2,
+  deferred: 3,
+  closed: 4,
+  ready: 5,
+  unknown: 6
+});
+
+function statusSortRank(status) {
+  return STATUS_SORT_ORDER[normalizeStatusKey(status)] ?? 6;
+}
+
+function toTime(value) {
+  if (typeof value !== "string" || !value.trim()) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Sort issues according to the chosen mode.
+ *
+ * - "default": status (in_progress first) -> priority (P0 first) -> updated (newest first)
+ * - "priority": priority (P0 first) -> status -> updated (newest first)
+ * - "newest": created (newest first)
+ * - "oldest": created (oldest first)
+ * - "updated": updated (newest first)
+ *
+ * Returns a new array; the input is not mutated.
+ *
+ * @param {Array} issues
+ * @param {string} [mode]
+ * @returns {Array}
+ */
+export function sortIssues(issues, mode = "default") {
+  const list = Array.isArray(issues) ? [...issues] : [];
+  const safeMode = typeof mode === "string" ? mode : "default";
+
+  const compare = (a, b) => {
+    if (safeMode === "newest") {
+      return toTime(b?.createdAt) - toTime(a?.createdAt);
+    }
+    if (safeMode === "oldest") {
+      return toTime(a?.createdAt) - toTime(b?.createdAt);
+    }
+    if (safeMode === "updated") {
+      return toTime(b?.updatedAt) - toTime(a?.updatedAt);
+    }
+    if (safeMode === "priority") {
+      const pa = Number.isInteger(a?.priority) ? a.priority : 4;
+      const pb = Number.isInteger(b?.priority) ? b.priority : 4;
+      if (pa !== pb) return pa - pb;
+      const sa = statusSortRank(a?.status);
+      const sb = statusSortRank(b?.status);
+      if (sa !== sb) return sa - sb;
+      return toTime(b?.updatedAt) - toTime(a?.updatedAt);
+    }
+    // default
+    const sa = statusSortRank(a?.status);
+    const sb = statusSortRank(b?.status);
+    if (sa !== sb) return sa - sb;
+    const pa = Number.isInteger(a?.priority) ? a.priority : 4;
+    const pb = Number.isInteger(b?.priority) ? b.priority : 4;
+    if (pa !== pb) return pa - pb;
+    return toTime(b?.updatedAt) - toTime(a?.updatedAt);
+  };
+
+  return list.sort(compare);
+}

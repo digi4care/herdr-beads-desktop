@@ -17,6 +17,7 @@ import {
   presentStatusEntries,
   resolveSelectedStatuses,
   SUPPORTED_STATUSES,
+  sortIssues,
   toggleStatusFilter
 } from "../mods/beads-desktop/data.js";
 
@@ -443,4 +444,71 @@ test("filterIssuesByStatus filters by the resolved selection", () => {
   const result = filterIssuesByStatus(issues, new Set(["open"]));
   assert.equal(result.length, 2);
   assert.ok(result.every((issue) => issue.status === "open"));
+});
+
+test("sortIssues returns a new array and leaves the input untouched", () => {
+  const issues = [{ id: "a", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" }];
+  const sorted = sortIssues(issues, "default");
+  assert.notEqual(sorted, issues);
+  assert.equal(issues.length, 1);
+});
+
+test("sortIssues default puts in_progress before open before blocked", () => {
+  const issues = [
+    { id: "b", priority: 2, status: "blocked", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "a", priority: 2, status: "in_progress", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "c", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" }
+  ];
+  const sorted = sortIssues(issues, "default");
+  assert.deepEqual(sorted.map((i) => i.id), ["a", "c", "b"]);
+});
+
+test("sortIssues priority puts P0 before P4", () => {
+  const issues = [
+    { id: "low", priority: 4, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "high", priority: 0, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" }
+  ];
+  const sorted = sortIssues(issues, "priority");
+  assert.deepEqual(sorted.map((i) => i.id), ["high", "low"]);
+});
+
+test("sortIssues newest sorts by createdAt descending", () => {
+  const issues = [
+    { id: "old", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "new", priority: 2, status: "open", createdAt: "2026-02-01", updatedAt: "2026-02-01" }
+  ];
+  const sorted = sortIssues(issues, "newest");
+  assert.deepEqual(sorted.map((i) => i.id), ["new", "old"]);
+});
+
+test("sortIssues oldest sorts by createdAt ascending", () => {
+  const issues = [
+    { id: "old", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "new", priority: 2, status: "open", createdAt: "2026-02-01", updatedAt: "2026-02-01" }
+  ];
+  const sorted = sortIssues(issues, "oldest");
+  assert.deepEqual(sorted.map((i) => i.id), ["old", "new"]);
+});
+
+test("sortIssues updated sorts by updatedAt descending", () => {
+  const issues = [
+    { id: "stale", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "fresh", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-02-01" }
+  ];
+  const sorted = sortIssues(issues, "updated");
+  assert.deepEqual(sorted.map((i) => i.id), ["fresh", "stale"]);
+});
+
+test("sortIssues handles non-array input", () => {
+  assert.deepEqual(sortIssues(null, "default"), []);
+  assert.deepEqual(sortIssues(undefined, "default"), []);
+});
+
+test("sortIssues handles unknown mode by falling back to default", () => {
+  const issues = [
+    { id: "b", priority: 2, status: "open", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    { id: "a", priority: 2, status: "in_progress", createdAt: "2026-01-01", updatedAt: "2026-01-01" }
+  ];
+  const sorted = sortIssues(issues, "nonsense");
+  assert.deepEqual(sorted.map((i) => i.id), ["a", "b"]);
 });

@@ -20,7 +20,8 @@ test("settings module exposes shared key, frozen defaults and font scales", () =
     buttonContent: "text",
     detailsRender: "rendered",
     mermaidRender: false,
-    viewMode: "list"
+    viewMode: "list",
+    sortMode: "default"
   });
   assert.ok(Object.isFrozen(DEFAULT_SETTINGS));
   assert.deepEqual(FONT_SCALES, [0.9, 1, 1.15]);
@@ -50,7 +51,8 @@ test("normalizeSettings keeps valid values", () => {
       buttonContent: "icon",
       detailsRender: "raw",
       mermaidRender: false,
-      viewMode: "list"
+      viewMode: "list",
+      sortMode: "default"
     }
   );
 });
@@ -110,11 +112,11 @@ test("serializeSettings produces normalized JSON with stable key order", () => {
   });
   assert.equal(
     serialized,
-    '{"fontScale":1.15,"buttonVariant":"solid","buttonContent":"icon","detailsRender":"raw","mermaidRender":false,"viewMode":"list"}'
+    '{"fontScale":1.15,"buttonVariant":"solid","buttonContent":"icon","detailsRender":"raw","mermaidRender":false,"viewMode":"list","sortMode":"default"}'
   );
   assert.equal(
     serializeSettings({ fontScale: "bad", buttonVariant: "bad" }),
-    '{"fontScale":1,"buttonVariant":"ghost","buttonContent":"text","detailsRender":"rendered","mermaidRender":false,"viewMode":"list"}'
+    '{"fontScale":1,"buttonVariant":"ghost","buttonContent":"text","detailsRender":"rendered","mermaidRender":false,"viewMode":"list","sortMode":"default"}'
   );
 });
 
@@ -125,7 +127,8 @@ test("settings roundtrip through parse and serialize", () => {
     buttonContent: "icon",
     detailsRender: "raw",
     mermaidRender: false,
-    viewMode: "list"
+    viewMode: "list",
+    sortMode: "default"
   };
   assert.deepEqual(parseSettings(serializeSettings(settings)), settings);
 });
@@ -137,7 +140,8 @@ test("mergeSettings keeps untouched fields and skips null or undefined patch val
     buttonContent: "icon",
     detailsRender: "raw",
     mermaidRender: false,
-    viewMode: "list"
+    viewMode: "list",
+    sortMode: "default"
   };
 
   assert.deepEqual(mergeSettings(current, { buttonVariant: "ghost" }), {
