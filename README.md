@@ -17,6 +17,20 @@ herdr-app check mods/beads-desktop
 
 Tests use Node's built-in `node:test`; no external packages are required.
 
+## Screenshots
+
+| Default panel (Active list + inline details) | Settings view |
+|---|---|
+| ![Default panel](screenshots/panel-default.png) | ![Settings view](screenshots/settings.png) |
+
+| BV Triage recommendation card | Issue details popup |
+|---|---|
+| ![BV Triage](screenshots/bv-triage.png) | ![Issue details popup](screenshots/detail-popup.png) |
+
+| Context menu | Ready filter + BV Triage banner |
+|---|---|
+| ![Context menu](screenshots/context-menu.png) | ![Ready filter](screenshots/panel-ready.png) |
+
 ## Installation
 
 Copy only the mod directory, not the development documentation:

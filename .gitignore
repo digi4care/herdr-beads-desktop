@@ -15,3 +15,6 @@ node_modules/
 
 # Development recipe; not part of the published mod.
 /RECIPE.md
+
+# Local tool image captures (not for publication).
+/.opencode/
