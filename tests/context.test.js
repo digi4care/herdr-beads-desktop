@@ -79,3 +79,70 @@ test("visibility actions do not repeat an identical layout transition", () => {
   assert.equal(resolveVisibilityAction({ id: "mod-block", hidden: false }, false, false), "none");
   assert.equal(resolveVisibilityAction({ id: "mod-block", hidden: false }, false, true), "hide");
 });
+
+test("resolveProjectContext returns unsupported when there is no space", () => {
+  const result = resolveProjectContext({ focused: null, spaces: [] }, null);
+  assert.equal(result.supported, false);
+  assert.equal(result.key, "none");
+  assert.equal(result.cwd, null);
+  assert.equal(result.machine, null);
+});
+
+test("resolveProjectContext falls back to space.folder when focused cwd is missing", () => {
+  const result = resolveProjectContext(
+    {
+      focused: { tab: "t1", cwd: "" },
+      spaces: [{ id: "s1", active: true, folder: "/space/folder", machine: "m1" }]
+    },
+    null
+  );
+  assert.equal(result.supported, true);
+  assert.equal(result.cwd, "/space/folder");
+  assert.equal(result.machine, "m1");
+  assert.equal(result.tabId, "t1");
+});
+
+test("resolveProjectContext returns nofolder when neither focused cwd nor folder exists", () => {
+  const result = resolveProjectContext(
+    { focused: { tab: "t1", cwd: "" }, spaces: [{ id: "s1", active: true, folder: "" }] },
+    null
+  );
+  assert.equal(result.supported, false);
+  assert.equal(result.key, "nofolder:s1:t1");
+  assert.equal(result.cwd, null);
+});
+
+test("resolveProjectContext preserves previous cwd when focus leaves the terminal", () => {
+  const previous = {
+    key: "local:s1:t1::/prev",
+    supported: true,
+    cwd: "/prev",
+    tabId: "t1",
+    spaceId: "s1",
+    machine: null
+  };
+  const result = resolveProjectContext(
+    { focused: { tab: "t1", cwd: "" }, spaces: [{ id: "s1", active: true, folder: "" }] },
+    previous
+  );
+  assert.equal(result.supported, true);
+  assert.equal(result.cwd, "/prev");
+  assert.equal(result.key, previous.key);
+});
+
+test("resolveProjectContext does not preserve cwd across a different space", () => {
+  const previous = {
+    key: "local:s1:t1::/prev",
+    supported: true,
+    cwd: "/prev",
+    tabId: "t1",
+    spaceId: "s1",
+    machine: null
+  };
+  const result = resolveProjectContext(
+    { focused: { tab: "t1", cwd: "" }, spaces: [{ id: "s2", active: true, folder: "/other" }] },
+    previous
+  );
+  assert.equal(result.supported, true);
+  assert.equal(result.cwd, "/other");
+});

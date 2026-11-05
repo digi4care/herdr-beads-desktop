@@ -387,3 +387,60 @@ test("filterIssuesByStatus and filterIssues compose ready and multi-select statu
     ["a", "d"]
   );
 });
+
+test("parseBvTriage rejects payloads without recommendations", () => {
+  assert.throws(() => parseBvTriage(null), /missing recommendations/);
+  assert.throws(() => parseBvTriage({}), /missing recommendations/);
+  assert.throws(() => parseBvTriage({ triage: {} }), /missing recommendations/);
+  assert.throws(() => parseBvTriage({ triage: { recommendations: "x" } }), /missing recommendations/);
+});
+
+test("parseBvNext rejects non-object payloads", () => {
+  assert.throws(() => parseBvNext(null), /Invalid bv next output/);
+  assert.throws(() => parseBvNext("x"), /Invalid bv next output/);
+  assert.throws(() => parseBvNext(42), /Invalid bv next output/);
+});
+
+test("parseBvNext reports non-actionable when no recommendation is present", () => {
+  const result = parseBvNext({ actionable: false, message: "none" });
+  assert.equal(result.actionable, false);
+  assert.equal(result.recommendation, null);
+  assert.equal(result.message, "none");
+});
+
+test("parseBrDependencies rejects non-array payloads", () => {
+  assert.throws(() => parseBrDependencies(null), /expected an array/);
+  assert.throws(() => parseBrDependencies({}), /expected an array/);
+});
+
+test("parseBrReady rejects non-array payloads", () => {
+  assert.throws(() => parseBrReady(null), /expected an array/);
+  assert.throws(() => parseBrReady({}), /expected an array/);
+});
+
+test("formatStatusFilterSummary returns Active for the default selection", () => {
+  const issues = [{ status: "open" }, { status: "closed" }];
+  assert.equal(formatStatusFilterSummary(issues, null), "Active");
+});
+
+test("formatStatusFilterSummary returns All, None, single status, or count", () => {
+  const issues = [{ status: "open" }, { status: "blocked" }, { status: "closed" }];
+  assert.equal(formatStatusFilterSummary(issues, new Set(["open", "blocked", "closed"])), "All");
+  assert.equal(formatStatusFilterSummary(issues, new Set()), "None");
+  assert.equal(formatStatusFilterSummary(issues, new Set(["open"])), "open");
+  assert.equal(formatStatusFilterSummary(issues, new Set(["open", "closed"])), "2 states");
+});
+
+test("filterIssuesByStatus with null keeps non-closed issues (Active)", () => {
+  const issues = [{ status: "open" }, { status: "closed" }];
+  const result = filterIssuesByStatus(issues, null);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].status, "open");
+});
+
+test("filterIssuesByStatus filters by the resolved selection", () => {
+  const issues = [{ status: "open" }, { status: "closed" }, { status: "open" }];
+  const result = filterIssuesByStatus(issues, new Set(["open"]));
+  assert.equal(result.length, 2);
+  assert.ok(result.every((issue) => issue.status === "open"));
+});

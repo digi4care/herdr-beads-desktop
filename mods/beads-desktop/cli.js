@@ -187,9 +187,15 @@ export function createCliRunner({ exec } = {}) {
     return parseBrReady(payload);
   }
 
+  function isValidIssueId(issueId) {
+    return typeof issueId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(issueId);
+  }
+
   /** br show <id> --json */
   async function showIssue(issueId, context = {}) {
-    if (!issueId) throw new CliError("showIssue requires an issue id.", { command: "br" });
+    if (!isValidIssueId(issueId)) {
+      throw new CliError("showIssue requires a safe issue id.", { command: "br" });
+    }
     const payload = await runJson(
       "br",
       ["show", issueId, "--json"],
@@ -201,8 +207,8 @@ export function createCliRunner({ exec } = {}) {
 
   /** br dep list <id> --json */
   async function listDependencies(issueId, context = {}) {
-    if (!issueId) {
-      throw new CliError("listDependencies requires an issue id.", { command: "br" });
+    if (!isValidIssueId(issueId)) {
+      throw new CliError("listDependencies requires a safe issue id.", { command: "br" });
     }
     const payload = await runJson(
       "br",

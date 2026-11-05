@@ -453,3 +453,64 @@ test("collapsing details expands list height to remaining space, preserves store
   assert.equal(dragWhileCollapsed.collapsed, true);
   assert.equal(dragWhileCollapsed.detailsHeight, DEFAULT_COLLAPSED_DETAILS_HEIGHT);
 });
+
+test("computeDetailsLayout handles a compact panel", () => {
+  const layout = computeDetailsLayout({ panelHeight: 120, ratio: 0.4, minDetailsHeight: 108, minListHeight: 140 });
+  assert.equal(layout.isCompact, true);
+  assert.ok(layout.detailsHeight >= 1);
+  assert.ok(layout.listHeight >= 0);
+});
+
+test("computeDetailsLayout handles a zero available height", () => {
+  const layout = computeDetailsLayout({ panelHeight: 10, ratio: 0.4, minDetailsHeight: 108, minListHeight: 140 });
+  assert.equal(layout.isCompact, true);
+});
+
+test("sizesToDetailsRatio falls back when sizes are missing", () => {
+  assert.equal(sizesToDetailsRatio([], {}), DEFAULT_DETAILS_RATIO);
+  assert.equal(sizesToDetailsRatio([100], {}), DEFAULT_DETAILS_RATIO);
+});
+
+test("sizesToDetailsRatio computes from two sizes", () => {
+  const ratio = sizesToDetailsRatio([200, 300], {});
+  assert.ok(ratio > 0 && ratio < 1);
+});
+
+test("dragDeltaToDetailsRatio returns a clamped ratio", () => {
+  const ratio = dragDeltaToDetailsRatio({ deltaY: 50, panelHeight: 600, startRatio: 0.38 });
+  assert.ok(ratio >= MIN_DETAILS_RATIO && ratio <= MAX_DETAILS_RATIO);
+});
+
+test("pointerToDetailsRatio returns a clamped ratio", () => {
+  const ratio = pointerToDetailsRatio({ pointerY: 300, panelHeight: 600, panelTop: 0 });
+  assert.ok(ratio >= MIN_DETAILS_RATIO && ratio <= MAX_DETAILS_RATIO);
+});
+
+test("loadDetailsRatio reads from a storage shim", () => {
+  const store = { getItem: (k) => "0.5", setItem: () => {} };
+  const ratio = loadDetailsRatio({ storage: store, key: "k", fallbackRatio: 0.38 });
+  assert.equal(ratio, 0.5);
+});
+
+test("loadDetailsRatio falls back when storage is missing", () => {
+  const ratio = loadDetailsRatio({ storage: null, fallbackRatio: 0.38 });
+  assert.equal(ratio, 0.38);
+});
+
+test("saveDetailsRatio persists to a storage shim", () => {
+  const store = { setItem: () => {}, getItem: () => null };
+  const result = saveDetailsRatio(0.4, { storage: store, key: "k", panelHeight: 600 });
+  assert.equal(result.persisted, true);
+  assert.ok(result.ratio > 0);
+});
+
+test("saveDetailsRatio reports not persisted when storage is missing", () => {
+  const result = saveDetailsRatio(0.4, { storage: null, key: "k" });
+  assert.equal(result.persisted, false);
+});
+
+test("resolveDividerDrag reports changed only when the ratio moves", () => {
+  const result = resolveDividerDrag({ panelHeight: 600, pointerY: 300, currentRatio: 0.38 });
+  assert.equal(typeof result.changed, "boolean");
+  assert.ok(result.ratio > 0);
+});

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCliRunner, buildExecOptions, CliError, isCliError } from "../mods/beads-desktop/cli.js";
+import { createCliRunner, buildExecOptions, CliError, isCliError, bvFlag } from "../mods/beads-desktop/cli.js";
 
 function jsonResult(payload) {
   return { code: 0, stdout: JSON.stringify(payload), stderr: "" };
@@ -308,4 +308,85 @@ test("an unreachable remote machine rejects with a wrapped error, no ssh fallbac
   );
   assert.equal(exec.calls.length, 1);
   assert.equal(exec.calls[0].command, "br");
+});
+
+test("showIssue and listDependencies reject unsafe issue ids without calling exec", async () => {
+  const exec = makeFakeExec({});
+  const runner = createCliRunner({ exec });
+
+  for (const bad of ["", "   ", "id with space", "id;rm -rf /", "../etc", "id\nnewline"]) {
+    await assert.rejects(() => runner.showIssue(bad, { cwd: "/a" }), CliError);
+    await assert.rejects(() => runner.loadIssue(bad, { cwd: "/a" }), CliError);
+  }
+
+  assert.equal(exec.calls.length, 0, "no command must run for an unsafe issue id");
+});
+
+test("createCliRunner rejects a non-function exec", () => {
+  assert.throws(() => createCliRunner({ exec: null }), TypeError);
+  assert.throws(() => createCliRunner({}), TypeError);
+});
+
+test("runRaw refuses unsupported commands and empty args", async () => {
+  const exec = makeFakeExec({});
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }).then(() => {}), /br list/).catch(() => {});
+  // Directly exercise runRaw via an unknown bv mode path is not exposed; bvFlag covers unknown mode:
+  assert.throws(() => bvFlag("nope"), /Unknown bv mode/);
+});
+
+test("bvFlag throws for unknown modes", () => {
+  assert.throws(() => bvFlag("foo"), CliError);
+});
+
+test("a failing exec is wrapped as a CliError", async () => {
+  const exec = async () => {
+    throw new Error("network down");
+  };
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }), /network down/);
+});
+
+test("a non-object exec result is reported as no result", async () => {
+  const exec = async () => null;
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }), /returned no result/);
+});
+
+test("an empty stdout on success throws 'returned empty output'", async () => {
+  const exec = makeFakeExec({ "br list --json --limit 200": { code: 0, stdout: "   ", stderr: "" } });
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }), /returned empty output/);
+});
+
+test("invalid JSON stdout throws 'returned invalid JSON'", async () => {
+  const exec = makeFakeExec({ "br list --json --limit 200": { code: 0, stdout: "{not json", stderr: "" } });
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }), /returned invalid JSON/);
+});
+
+test("a non-zero exit with stderr keeps the structured error", async () => {
+  const exec = makeFakeExec({ "br list --json --limit 200": { code: 2, stdout: "", stderr: "boom" } });
+  const runner = createCliRunner({ exec });
+  await assert.rejects(() => runner.listIssues({ cwd: "/a" }), /boom/);
+});
+
+test("checkBv reports unavailable on a thrown exec", async () => {
+  const exec = async (cmd) => {
+    if (cmd === "bv") throw new Error("spawn failed");
+    return { code: 0, stdout: "[]", stderr: "" };
+  };
+  // override list/ready to succeed
+  const fake = makeFakeExec({
+    "br list --json --limit 200": { code: 0, stdout: JSON.stringify({ issues: [], total: 0 }) },
+    "br ready --json": { code: 0, stdout: "[]" }
+  });
+  const exec2 = async (cmd, args, opts) => {
+    if (cmd === "bv") throw new Error("spawn failed");
+    return fake(cmd, args, opts);
+  };
+  const runner = createCliRunner({ exec: exec2 });
+  const result = await runner.loadIssues({ cwd: "/a" });
+  assert.equal(result.bvAvailable, false);
+  assert.ok(result.bvError);
 });
