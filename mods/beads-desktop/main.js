@@ -20,13 +20,14 @@ import {
 } from "herdr";
 import {
   countIssuesByStatus,
-   filterIssues,
+  filterIssues,
   formatStatusFilterSummary,
   isDefaultActiveStatusSelection,
   presentStatusEntries,
   resolveSelectedStatuses,
   toggleStatusFilter
 } from "./data.js";
+import { formatIssueReference } from "./issue-reference.js";
 import { buildExecOptions, createCliRunner } from "./cli.js";
 import { resolveProjectContext, resolveVisibilityAction } from "./context.js";
 import {
@@ -407,6 +408,10 @@ export default class BeadsDesktop extends View {
     this.selectedIssue = null;
     this.selectedDeps = [];
     this.contextMenu = null;
+    this.contextMenuAnchor = "bottom_left";
+    this.contextMenuOffsetX = 0;
+    this.copyNotice = null;
+    this.copyNoticeTimer = null;
 
     this.bvAvailable = false;
     this.bvMode = null;
@@ -1000,10 +1005,34 @@ export default class BeadsDesktop extends View {
     this.handle.focus();
     this.statusFilterOpen = false;
     this.highlightedId = issue.id;
+    let anchor = "bottom_left";
+    let offsetX = 0;
+    const bounds = event && event.bounds;
+    const viewport =
+      typeof window !== "undefined" && typeof window.viewport_size === "function"
+        ? window.viewport_size()
+        : null;
+    const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 1280;
+    const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 800;
+    if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+      const midX = bounds.x + (Number.isFinite(bounds.width) ? bounds.width / 2 : 0);
+      const midY = bounds.y + (Number.isFinite(bounds.height) ? bounds.height / 2 : 0);
+      const vertical = midY < viewportHeight / 2 ? "bottom" : "top";
+      const horizontal = midX < viewportWidth / 2 ? "left" : "right";
+      anchor = `${vertical}_${horizontal}`;
+      if (Number.isFinite(event.position?.x) && Number.isFinite(bounds.x)) {
+        const localX = Math.round(event.position.x - bounds.x);
+        offsetX = Math.max(0, Math.min(Math.max(0, (bounds.width || 0) - 196), localX));
+      }
+    }
     this.contextMenu = {
       issueId: issue.id,
-      issueTitle: issue.title || issue.id
+      issueTitle: issue.title || issue.id,
+      anchor,
+      offsetX
     };
+    this.contextMenuAnchor = anchor;
+    this.contextMenuOffsetX = offsetX;
     event && cx.stop_propagation();
     cx.notify();
   }
@@ -2045,6 +2074,7 @@ export default class BeadsDesktop extends View {
       .id(`beads-issue-context-menu-${issue.id}`)
       .role("menu")
       .w(196)
+      .when(this.contextMenuOffsetX > 0, (el) => el.ml(this.contextMenuOffsetX))
       .p(6)
       .gap(4)
       .rounded(6)
@@ -2092,6 +2122,46 @@ export default class BeadsDesktop extends View {
             this.openIssueDetailPopup(issue.id, clickCx);
           })
           .child("Open details in popup")
+      )
+      .child(
+        div()
+          .id(`context-copy-reference-${issue.id}`)
+          .role("menu_item")
+          .w_full()
+          .px(8)
+          .py(5)
+          .rounded(4)
+          .border_1()
+          .border_color(t.border)
+          .bg(t.surface)
+          .text_size(this.fs(11))
+          .text_color(t.foreground)
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_click((_e, clickCx) => {
+            clickCx.stop_propagation();
+            const reference = formatIssueReference({
+              id: issue.id,
+              title: issue.title || this.contextMenu?.issueTitle
+            });
+            if (!reference) {
+              this.copyNotice = "Nothing to copy.";
+            } else {
+              clickCx.write_to_clipboard(reference);
+              this.copyNotice = `Copied ${issue.id} to the clipboard.`;
+            }
+            this.closeContextMenu(clickCx);
+            if (this.copyNoticeTimer) {
+              this.copyNoticeTimer.cancel();
+            }
+            this.copyNoticeTimer = clickCx.timer.after(2500, (timerCx) => {
+              this.copyNotice = null;
+              this.copyNoticeTimer = null;
+              timerCx.notify();
+            });
+            clickCx.notify();
+          })
+          .child("Copy issue reference")
       )
       .child(
         div()
@@ -2244,7 +2314,7 @@ export default class BeadsDesktop extends View {
     }
 
     return Popup.new(`${keyPrefix}-popup-${rec.id || "item"}`, card)
-      .anchor("bottom_left")
+      .anchor(this.contextMenu?.anchor || "bottom_left")
       .when(hasContextMenu, (el) =>
         el.content(this.renderContextMenuForIssue({ id: rec.id, title: rec.title }, t))
       );
@@ -2444,7 +2514,7 @@ export default class BeadsDesktop extends View {
     }
 
     return Popup.new(`issue-context-popup-${issue.id}`, row)
-      .anchor("bottom_left")
+      .anchor(this.contextMenu?.anchor || "bottom_left")
       .when(hasContextMenu, (el) => el.content(this.renderContextMenuForIssue(issue, t)));
   }
 
@@ -3449,6 +3519,16 @@ export default class BeadsDesktop extends View {
       .when(!this.showSettings && showFunctionalUi && !isDetailPopup, (el) =>
         el
           .child(this.renderControls(context, t))
+          .when(this.copyNotice, (panel) =>
+            panel.child(
+              div()
+                .px(12)
+                .py(4)
+                .text_size(this.fs(11))
+                .text_color(t.muted)
+                .child(this.copyNotice)
+            )
+          )
           .when(this.bvAvailable && this.bvState !== "idle", (panel) => panel.child(this.renderBvSection(t)))
           .child(this.renderIssueList(visible, t))
           .child(this.renderDetailsDivider(t))
