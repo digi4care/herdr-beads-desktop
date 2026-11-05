@@ -89,6 +89,64 @@ export function parseBrReady(payload) {
   return new Set(payload.map((issue) => text(issue.id)).filter(Boolean));
 }
 
+export const SUPPORTED_STATUSES = Object.freeze([
+  "open",
+  "in_progress",
+  "blocked",
+  "closed",
+  "deferred",
+  "ready"
+]);
+
+const STATUS_ALIASES = Object.freeze({
+  progress: "in_progress",
+  working: "in_progress",
+  done: "closed"
+});
+
+export function normalizeStatusKey(status) {
+  if (typeof status !== "string") {
+    return "unknown";
+  }
+
+  const normalized = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) {
+    return "unknown";
+  }
+
+  return STATUS_ALIASES[normalized] ?? normalized;
+}
+
+export function countIssuesByStatus(issues) {
+  const list = Array.isArray(issues) ? issues : [];
+  const counts = {};
+
+  for (const status of SUPPORTED_STATUSES) {
+    counts[status] = 0;
+  }
+
+  for (const issue of list) {
+    const status = normalizeStatusKey(issue?.status);
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+
+  const extras = Object.keys(counts)
+    .filter((status) => !SUPPORTED_STATUSES.includes(status))
+    .sort();
+
+  const ordered = SUPPORTED_STATUSES.map((status) => ({
+    status,
+    count: counts[status],
+    supported: true
+  }));
+
+  for (const status of extras) {
+    ordered.push({ status, count: counts[status], supported: false });
+  }
+
+  return { total: list.length, counts, ordered };
+}
+
 export function parseBrList(payload) {
   if (!payload || !Array.isArray(payload.issues)) {
     throw new Error("Invalid br list output: missing issues.");

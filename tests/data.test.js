@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterIssues, parseBrDependencies, parseBrList, parseBrReady, parseBrShow, parseBvNext, parseBvTriage } from "../mods/beads-desktop/data.js";
+import { countIssuesByStatus, filterIssues, normalizeStatusKey, parseBrDependencies, parseBrList, parseBrReady, parseBrShow, parseBvNext, parseBvTriage, SUPPORTED_STATUSES } from "../mods/beads-desktop/data.js";
 
 test("parseBrList normalizes the br 0.7.6 list shape and preserves pagination", () => {
   const result = parseBrList({
@@ -139,4 +139,130 @@ test("parseBvTriage normalizes and limits recommendations to three", () => {
   assert.equal(result[0].priority, 1);
   assert.equal(result[0].unblocks, 2);
   assert.deepEqual(parseBvTriage({ triage: { recommendations: [] } }), []);
+});
+
+test("countIssuesByStatus returns zero counts for every supported status on an empty list", () => {
+  const result = countIssuesByStatus([]);
+
+  assert.equal(result.total, 0);
+  assert.deepEqual(Object.keys(result.counts), [...SUPPORTED_STATUSES]);
+  for (const status of SUPPORTED_STATUSES) {
+    assert.equal(result.counts[status], 0);
+  }
+  assert.equal("unknown" in result.counts, false);
+  assert.equal(result.ordered.length, SUPPORTED_STATUSES.length);
+  assert.deepEqual(result.ordered.map((entry) => entry.status), [...SUPPORTED_STATUSES]);
+});
+
+test("countIssuesByStatus returns zero counts for every supported status on non-array input", () => {
+  for (const input of [undefined, null, "issues", 42, {}]) {
+    const result = countIssuesByStatus(input);
+
+    assert.equal(result.total, 0);
+    assert.deepEqual(Object.keys(result.counts), [...SUPPORTED_STATUSES]);
+    for (const status of SUPPORTED_STATUSES) {
+      assert.equal(result.counts[status], 0);
+    }
+    assert.equal(result.ordered.length, SUPPORTED_STATUSES.length);
+  }
+});
+
+test("countIssuesByStatus counts mixed statuses with one custom and one missing status", () => {
+  const result = countIssuesByStatus([
+    { id: "a", status: "open" },
+    { id: "b", status: "open" },
+    { id: "c", status: "custom" },
+    { id: "d" }
+  ]);
+
+  assert.equal(result.counts.open, 2);
+  assert.equal(result.counts.custom, 1);
+  assert.equal(result.counts.unknown, 1);
+  assert.equal(result.counts.closed, 0);
+  assert.equal(result.total, 4);
+});
+
+test("normalizeStatusKey normalizes progress, done and In-Progress style variants", () => {
+  assert.equal(normalizeStatusKey("progress"), "in_progress");
+  assert.equal(normalizeStatusKey("working"), "in_progress");
+  assert.equal(normalizeStatusKey("done"), "closed");
+  assert.equal(normalizeStatusKey("In-Progress"), "in_progress");
+  assert.equal(normalizeStatusKey("  OPEN  "), "open");
+  assert.equal(normalizeStatusKey("in progress"), "in_progress");
+  assert.equal(normalizeStatusKey("unknown"), "unknown");
+  assert.equal(normalizeStatusKey(""), "unknown");
+  assert.equal(normalizeStatusKey(undefined), "unknown");
+  assert.equal(normalizeStatusKey(7), "unknown");
+});
+
+test("countIssuesByStatus buckets status variants into their normalized keys", () => {
+  const result = countIssuesByStatus([
+    { id: "a", status: "progress" },
+    { id: "b", status: "In-Progress" },
+    { id: "c", status: "done" },
+    { id: "d", status: "CLOSED" }
+  ]);
+
+  assert.equal(result.counts.in_progress, 2);
+  assert.equal(result.counts.closed, 2);
+  assert.equal(result.total, 4);
+});
+
+test("countIssuesByStatus orders supported statuses first and extras alphabetically", () => {
+  const result = countIssuesByStatus([
+    { id: "a", status: "zebra" },
+    { id: "b", status: "apple" },
+    { id: "c", status: "open" }
+  ]);
+
+  assert.deepEqual(result.ordered.map((entry) => entry.status), [
+    ...SUPPORTED_STATUSES,
+    "apple",
+    "zebra"
+  ]);
+  assert.deepEqual(result.ordered.slice(0, SUPPORTED_STATUSES.length), SUPPORTED_STATUSES.map((status) => ({
+    status,
+    count: result.counts[status],
+    supported: true
+  })));
+  assert.deepEqual(result.ordered.slice(SUPPORTED_STATUSES.length), [
+    { status: "apple", count: 1, supported: false },
+    { status: "zebra", count: 1, supported: false }
+  ]);
+});
+
+test("countIssuesByStatus totals every input issue including unknown buckets", () => {
+  const issues = [
+    { id: "a", status: "open" },
+    { id: "b", status: "mystery" },
+    { id: "c" },
+    { id: "d", status: "" }
+  ];
+
+  const result = countIssuesByStatus(issues);
+
+  assert.equal(result.total, issues.length);
+  assert.equal(result.counts.unknown, 2);
+  assert.equal(result.counts.mystery, 1);
+  assert.equal(result.counts.open, 1);
+});
+
+test("countIssuesByStatus counts the full issue list and not the filtered subset", () => {
+  const issues = [
+    { id: "a", status: "open" },
+    { id: "b", status: "closed" },
+    { id: "c", status: "open" }
+  ];
+  const ready = new Set(["c"]);
+
+  const all = countIssuesByStatus(issues);
+  const filtered = countIssuesByStatus(filterIssues(issues, ready, "ready"));
+
+  assert.equal(all.total, 3);
+  assert.equal(all.counts.open, 2);
+  assert.equal(all.counts.closed, 1);
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.counts.open, 1);
+  assert.equal(filtered.counts.closed, 0);
+  assert.equal(all.counts.open, 2);
 });
