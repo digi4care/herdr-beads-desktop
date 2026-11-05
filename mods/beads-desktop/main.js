@@ -1015,15 +1015,14 @@ export default class BeadsDesktop extends View {
     const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 1280;
     const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 800;
     if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
-      const midX = bounds.x + (Number.isFinite(bounds.width) ? bounds.width / 2 : 0);
       const midY = bounds.y + (Number.isFinite(bounds.height) ? bounds.height / 2 : 0);
+      // The panel lives on the right side of the window, so the menu always opens
+      // leftwards (anchor *_right): opening rightwards would leave the screen.
+      // Vertical placement flips based on whether the clicked row is in the top or
+      // bottom half of the window, and the Popup itself clamps to the window edges.
       const vertical = midY < viewportHeight / 2 ? "bottom" : "top";
-      const horizontal = midX < viewportWidth / 2 ? "left" : "right";
-      anchor = `${vertical}_${horizontal}`;
-      if (Number.isFinite(event.position?.x) && Number.isFinite(bounds.x)) {
-        const localX = Math.round(event.position.x - bounds.x);
-        offsetX = Math.max(0, Math.min(Math.max(0, (bounds.width || 0) - 196), localX));
-      }
+      anchor = `${vertical}_right`;
+      offsetX = 0;
     }
     this.contextMenu = {
       issueId: issue.id,
