@@ -27,7 +27,7 @@ import {
   resolveSelectedStatuses,
   toggleStatusFilter
 } from "./data.js";
-import { formatIssueReference } from "./issue-reference.js";
+import { formatIssueReference, sanitizeSingleLine } from "./issue-reference.js";
 import { buildExecOptions, createCliRunner } from "./cli.js";
 import { resolveProjectContext, resolveVisibilityAction } from "./context.js";
 import {
@@ -2112,6 +2112,43 @@ export default class BeadsDesktop extends View {
             this.openIssueDetailPopup(issue.id, clickCx);
           })
           .child("Open details in popup")
+      )
+      .child(
+        div()
+          .id(`context-copy-id-${issue.id}`)
+          .role("menu_item")
+          .w_full()
+          .px(8)
+          .py(5)
+          .rounded(4)
+          .border_1()
+          .border_color(t.border)
+          .bg(t.surface)
+          .text_size(this.fs(11))
+          .text_color(t.foreground)
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_click((_e, clickCx) => {
+            clickCx.stop_propagation();
+            const issueId = sanitizeSingleLine(issue.id, 64);
+            if (!issueId) {
+              this.copyNotice = "Nothing to copy.";
+            } else {
+              clickCx.write_to_clipboard(issueId);
+              this.copyNotice = `Copied ${issueId} to the clipboard.`;
+            }
+            this.closeContextMenu(clickCx);
+            if (this.copyNoticeTimer) {
+              this.copyNoticeTimer.cancel();
+            }
+            this.copyNoticeTimer = clickCx.timer.after(2500, (timerCx) => {
+              this.copyNotice = null;
+              this.copyNoticeTimer = null;
+              timerCx.notify();
+            });
+            clickCx.notify();
+          })
+          .child("Copy issue ID")
       )
       .child(
         div()
