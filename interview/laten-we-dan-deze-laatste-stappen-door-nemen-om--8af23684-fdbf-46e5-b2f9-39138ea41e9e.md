@@ -7,6 +7,7 @@ date_created: 2026-11-05
 owner: agent
 tags: [spec, diagnostic]
 consumedState: 88ce89ce4fa54d84f05acdd7ed8f9fa70fc11aad87565b0adebd36eae2df0df1
+status: complete
 ---
 
 # laten we dan deze laatste stappen door nemen om het production uit te rollen en bij herdr https://herdr.dev/gallery/?type=mods aante melden
